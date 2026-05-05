@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dataprep-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dataprep}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dataprep_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-dataprep}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dataprep} -d ${POSTGRES_DB:-dataprep}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Redis is declared so the dev stack matches production shape, but the v0
+  # app does not connect to it yet. Rate limiting falls back to in-memory.
+  redis:
+    image: redis:7-alpine
+    container_name: dataprep-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,23 @@
+name: frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+
+# Skeleton pipeline. Real lint/typecheck/test/build steps are wired in
+# layer 12 once frontend code exists. Kept here so CI is green from
+# the first commit.
+jobs:
+  scaffold:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pipeline scaffolded
+        run: echo "frontend pipeline will be wired in layer 12"

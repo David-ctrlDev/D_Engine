@@ -1,0 +1,20 @@
+# Force LF line endings on all text files, regardless of OS.
+* text=auto eol=lf
+
+# Explicit binary types (avoid line-ending mangling)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+
+# Lockfiles: keep LF, never merge interactively
+pnpm-lock.yaml -merge linguist-generated
+uv.lock        -merge linguist-generated

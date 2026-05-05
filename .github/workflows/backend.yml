@@ -1,0 +1,22 @@
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+
+# Skeleton pipeline. Real lint/typecheck/test steps are wired in layer 12
+# once backend code exists. Kept here so CI is green from the first commit.
+jobs:
+  scaffold:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pipeline scaffolded
+        run: echo "backend pipeline will be wired in layer 12"
