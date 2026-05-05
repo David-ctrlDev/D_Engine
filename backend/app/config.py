@@ -12,7 +12,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from pydantic import AnyHttpUrl, BeforeValidator, Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class AppEnv(StrEnum):
@@ -39,7 +39,9 @@ def _split_csv(value: object) -> object:
     return value
 
 
-CORSOrigins = Annotated[list[AnyHttpUrl], BeforeValidator(_split_csv)]
+# NoDecode disables pydantic-settings' default JSON-parse of list/dict fields,
+# so the BeforeValidator below sees the raw CSV string from the environment.
+CORSOrigins = Annotated[list[AnyHttpUrl], NoDecode, BeforeValidator(_split_csv)]
 
 
 class Settings(BaseSettings):
@@ -60,8 +62,18 @@ class Settings(BaseSettings):
     # We keep DSNs as plain strings because asyncpg-flavoured URLs
     # (postgresql+asyncpg://...) are not always accepted by Pydantic's
     # PostgresDsn, and we already validate the scheme inside the engine factory.
+    #
+    # Two roles, on purpose:
+    #   * ``database_url`` — used at runtime by the app and by tests. Connects
+    #     as ``dataprep_app`` (NOSUPERUSER, NOBYPASSRLS) so RLS policies apply.
+    #   * ``database_admin_url`` — used by Alembic migrations and by tests for
+    #     schema reset / TRUNCATE. Connects as the table owner.
+    # Sharing one URL would either skip migrations DDL or, worse, let the
+    # runtime bypass RLS — we hit the latter early in development.
     database_url: str = Field(min_length=1)
+    database_admin_url: str = Field(min_length=1)
     test_database_url: str = Field(min_length=1)
+    test_database_admin_url: str = Field(min_length=1)
     sql_echo: bool = False
 
     # ----- JWT -----

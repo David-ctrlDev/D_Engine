@@ -12,6 +12,7 @@ from logging.config import fileConfig
 from typing import TYPE_CHECKING
 
 from alembic import context
+from app.auth import models
 from app.config import settings
 from app.db.base import Base
 from sqlalchemy import pool
@@ -20,18 +21,20 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
-# Importing the models package ensures every Table is registered against
-# Base.metadata before autogeneration runs. The import is intentionally
-# left as a side-effect; no symbols are needed in this module.
-# Layer 2 introduces the actual model module:
-#   from app.auth import models
-
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Honour an explicit URL set by callers (e.g. test fixtures) before falling
+# back to the application settings. The placeholder shipped in alembic.ini
+# (``driver://user:pass@host/dbname``) counts as "unset" for this purpose.
+#
+# Migrations always run as the admin/owner role (``database_admin_url``); the
+# regular ``database_url`` is for runtime app traffic, where RLS must apply.
+_existing_url = config.get_main_option("sqlalchemy.url")
+if not _existing_url or _existing_url.startswith("driver://"):
+    config.set_main_option("sqlalchemy.url", settings.database_admin_url)
 
 target_metadata = Base.metadata
 
