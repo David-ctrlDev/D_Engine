@@ -31,10 +31,11 @@ RLS is configured in the migration, not in this module — see
 
 from __future__ import annotations
 
-# `datetime` MUST be imported at runtime (not under TYPE_CHECKING). SQLAlchemy
-# 2.0 evaluates the string forms of ``Mapped[datetime]`` at class-creation
-# time via ``eval`` — moving it to TYPE_CHECKING raises MappedAnnotationError.
-from datetime import datetime  # noqa: TC003
+# ``datetime`` and ``UTC`` MUST be imported at runtime (not under
+# TYPE_CHECKING). SQLAlchemy 2.0 evaluates the string forms of
+# ``Mapped[datetime]`` at class-creation time via ``eval``; ``UTC`` is used
+# at runtime by the ``created_at`` Python-side default callable.
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
@@ -53,7 +54,7 @@ from sqlalchemy import (
 from sqlalchemy import (
     Enum as SAEnum,
 )
-from sqlalchemy.dialects.postgresql import INET, JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -98,8 +99,15 @@ class Tenant(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     slug: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    # Python-side default so the INSERT carries the value and SQLAlchemy does
+    # not add ``RETURNING created_at`` — RETURNING goes through the SELECT
+    # policy and would refuse rows whose tenant_id/user_id do not match the
+    # current GUCs (notably tenantless audit_log entries).
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
     )
 
     memberships: Mapped[list[TenantMembership]] = relationship(
@@ -117,8 +125,15 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    # Python-side default so the INSERT carries the value and SQLAlchemy does
+    # not add ``RETURNING created_at`` — RETURNING goes through the SELECT
+    # policy and would refuse rows whose tenant_id/user_id do not match the
+    # current GUCs (notably tenantless audit_log entries).
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
     )
 
     memberships: Mapped[list[TenantMembership]] = relationship(
@@ -145,8 +160,15 @@ class TenantMembership(Base):
     role: Mapped[TenantRole] = mapped_column(
         SAEnum(TenantRole, name="tenant_role", native_enum=True), nullable=False
     )
+    # Python-side default so the INSERT carries the value and SQLAlchemy does
+    # not add ``RETURNING created_at`` — RETURNING goes through the SELECT
+    # policy and would refuse rows whose tenant_id/user_id do not match the
+    # current GUCs (notably tenantless audit_log entries).
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
     )
 
     user: Mapped[User] = relationship(back_populates="memberships")
@@ -175,8 +197,15 @@ class MFAMethod(Base):
     )
     secret_encrypted: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Python-side default so the INSERT carries the value and SQLAlchemy does
+    # not add ``RETURNING created_at`` — RETURNING goes through the SELECT
+    # policy and would refuse rows whose tenant_id/user_id do not match the
+    # current GUCs (notably tenantless audit_log entries).
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
@@ -211,8 +240,15 @@ class MFARecoveryCode(Base):
     )
     code_hashed: Mapped[str] = mapped_column(String(255), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Python-side default so the INSERT carries the value and SQLAlchemy does
+    # not add ``RETURNING created_at`` — RETURNING goes through the SELECT
+    # policy and would refuse rows whose tenant_id/user_id do not match the
+    # current GUCs (notably tenantless audit_log entries).
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (Index("ix_mfa_recovery_codes_user_id", "user_id"),)
@@ -243,9 +279,20 @@ class RefreshToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    ip: Mapped[str | None] = mapped_column(INET, nullable=True)
+    # IPs are stored as plain strings (max 45 chars covers IPv4 and IPv6).
+    # We don't use Postgres' INET type because asyncpg returns it as
+    # ``ipaddress.IPv4Address`` / ``IPv6Address``, which would force every
+    # consumer to special-case the type — and we don't need CIDR ops.
+    ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    # Python-side default so the INSERT carries the value and SQLAlchemy does
+    # not add ``RETURNING created_at`` — RETURNING goes through the SELECT
+    # policy and would refuse rows whose tenant_id/user_id do not match the
+    # current GUCs (notably tenantless audit_log entries).
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
@@ -272,8 +319,15 @@ class AuthToken(Base):
     token_hashed: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Python-side default so the INSERT carries the value and SQLAlchemy does
+    # not add ``RETURNING created_at`` — RETURNING goes through the SELECT
+    # policy and would refuse rows whose tenant_id/user_id do not match the
+    # current GUCs (notably tenantless audit_log entries).
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
@@ -305,11 +359,22 @@ class AuditLog(Base):
         nullable=True,
     )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    ip: Mapped[str | None] = mapped_column(INET, nullable=True)
+    # IPs are stored as plain strings (max 45 chars covers IPv4 and IPv6).
+    # We don't use Postgres' INET type because asyncpg returns it as
+    # ``ipaddress.IPv4Address`` / ``IPv6Address``, which would force every
+    # consumer to special-case the type — and we don't need CIDR ops.
+    ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
     event_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # Python-side default so the INSERT carries the value and SQLAlchemy does
+    # not add ``RETURNING created_at`` — RETURNING goes through the SELECT
+    # policy and would refuse rows whose tenant_id/user_id do not match the
+    # current GUCs (notably tenantless audit_log entries).
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (

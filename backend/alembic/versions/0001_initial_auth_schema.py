@@ -209,7 +209,7 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("user_agent", sa.String(length=500), nullable=True),
-        sa.Column("ip", postgresql.INET(), nullable=True),
+        sa.Column("ip", sa.String(length=45), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -278,7 +278,7 @@ def upgrade() -> None:
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("event_type", sa.String(length=64), nullable=False),
-        sa.Column("ip", postgresql.INET(), nullable=True),
+        sa.Column("ip", sa.String(length=45), nullable=True),
         sa.Column("user_agent", sa.String(length=500), nullable=True),
         sa.Column("event_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column(

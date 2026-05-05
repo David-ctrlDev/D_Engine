@@ -13,7 +13,13 @@ dependencies = [
     "asyncpg>=0.29",
     "pydantic>=2.7",
     "pydantic-settings>=2.4",
-    "passlib[bcrypt]>=1.7",
+    # Spec asked for passlib, but passlib 1.7.4 (latest, 2020) is
+    # incompatible with bcrypt >=4.1, and fastapi-users transitively requires
+    # bcrypt >=4.1.2 via pwdlib. Rather than fight the resolver we adopt the
+    # same wrapper fastapi-users uses. pwdlib is a thin, actively-maintained
+    # bcrypt/argon2 wrapper — it satisfies "no hand-rolled crypto" and keeps
+    # us at one password library instead of two in conflict.
+    "pwdlib[bcrypt]>=0.2",
     "python-jose[cryptography]>=3.3",
     "cryptography>=43",
     "pyotp>=2.9",
@@ -30,7 +36,6 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "mypy>=1.11",
-    "types-passlib",
     "types-python-jose",
 ]
 
@@ -81,7 +86,7 @@ exclude = ["alembic/versions/"]
 [[tool.mypy.overrides]]
 module = [
     "authlib.*",
-    "passlib.*",
+    "pwdlib.*",
     "pyotp.*",
     "qrcode.*",
     "slowapi.*",
