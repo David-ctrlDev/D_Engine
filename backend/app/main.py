@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from app.auth.routes import router as auth_router
 from app.config import settings
 from app.core.rate_limit import limiter
 from app.logging_config import configure_logging
@@ -81,7 +82,7 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok", "env": settings.app_env.value}
 
-    # The /api/v1/auth router is registered in layer 6.
+    app.include_router(auth_router)
     return app
 
 

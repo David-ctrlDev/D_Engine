@@ -43,6 +43,7 @@ from app.auth.totp import (
     verify_code,
 )
 from app.core import security as crypto
+from app.db.rls import set_user_context
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -224,6 +225,10 @@ async def verify_during_login(
     Raises :class:`InvalidMFACodeError` on failure. On success it returns
     nothing — the caller proceeds with :func:`auth.service.finish_mfa_login`.
     """
+    # The /mfa/verify endpoint is unauthenticated (the mfa_token IS the
+    # credential), so no GUC has been set yet. Bind ``app.current_user``
+    # now so the audit_log_insert policy accepts our event rows.
+    await set_user_context(session, user_id=user_id)
     method = await _get_active_method(session, user_id)
     if method is None:
         raise MFANotConfiguredError

@@ -523,6 +523,11 @@ async def login(
         await session.flush()
         raise InvalidCredentialsError
 
+    # The audit row is attributed to user.id, so we must set the user GUC
+    # before insert — the audit_log_insert policy refuses rows whose
+    # user_id does not match ``app.current_user``.
+    await set_user_context(session, user_id=user.id)
+
     if not crypto.verify_password(password, user.hashed_password):
         await audit.log_event(
             session,

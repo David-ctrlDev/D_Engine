@@ -63,6 +63,11 @@ select = ["E", "W", "F", "I", "B", "UP", "S", "N", "C4", "SIM", "TCH", "RUF"]
 ignore = [
     "E501",   # line length is enforced by formatter
     "B008",   # FastAPI's Depends() pattern relies on calls in defaults
+    # Pydantic v2 / SQLAlchemy 2 / FastAPI all evaluate field annotations
+    # at runtime — moving the imports to TYPE_CHECKING breaks them.
+    "TC001",  # application typing imports
+    "TC002",  # third-party typing imports
+    "TC003",  # standard-library typing imports
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -112,6 +117,10 @@ asyncio_default_test_loop_scope = "session"
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning:passlib.*",
+    # slowapi 0.1.x calls asyncio.iscoroutinefunction which 3.14 deprecates.
+    "ignore::DeprecationWarning:slowapi.*",
+    # asyncpg also has a few deprecations on 3.14 we don't control.
+    "ignore::DeprecationWarning:asyncpg.*",
 ]
 addopts = [
     "-ra",

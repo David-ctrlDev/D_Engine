@@ -37,8 +37,8 @@ from app.core.tokens import (
     TokenScope,
     decode_token,
 )
+from app.db import session as _session_mod
 from app.db.rls import set_request_context
-from app.db.session import async_session_maker
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -75,7 +75,7 @@ def request_metadata(request: Request) -> RequestMetadata:
 async def get_session() -> AsyncIterator[AsyncSession]:
     """Public-endpoint session: no GUCs set, RLS-protected tables return
     nothing on read."""
-    async with async_session_maker() as session:
+    async with _session_mod.async_session_maker() as session:
         yield session
 
 
@@ -119,7 +119,7 @@ async def get_authenticated_session(
     Raises 401 if the cookie is missing, malformed, or expired.
     """
     claims = _claims_from_access_cookie(access_token)
-    async with async_session_maker() as session:
+    async with _session_mod.async_session_maker() as session:
         await set_request_context(session, user_id=claims.user_id, tenant_id=claims.tenant_id)
         yield session
 
