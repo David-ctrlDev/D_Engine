@@ -1,0 +1,6 @@
+.next/
+node_modules/
+public/
+*.lock
+*.lockb
+pnpm-lock.yaml
