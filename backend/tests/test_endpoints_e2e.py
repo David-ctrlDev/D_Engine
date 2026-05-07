@@ -38,6 +38,7 @@ from app.db.session import async_session_maker
 from app.main import app
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -67,8 +68,8 @@ async def email_sender() -> CapturingEmailSender:
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def client(
-    test_engine,
-    admin_engine,
+    test_engine: AsyncEngine,
+    admin_engine: AsyncEngine,
     email_sender: CapturingEmailSender,
 ) -> AsyncIterator[AsyncClient]:
     """ASGI client wired against the test DB. The session/engine fixtures

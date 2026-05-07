@@ -53,13 +53,13 @@ jobs:
       CORS_ORIGINS: http://localhost:3000
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # uv handles Python version + virtualenv + dependency cache. The
       # ``cache-dependency-glob`` keys the cache on the lockfile so cache
       # hits are deterministic across runs.
       - name: Set up uv (with cache)
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
           cache-dependency-glob: "backend/uv.lock"

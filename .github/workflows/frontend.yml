@@ -28,7 +28,7 @@ jobs:
       NEXT_PUBLIC_API_URL: http://localhost:8000
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # pnpm BEFORE setup-node so the Node action knows where pnpm lives
       # for its built-in cache. Pinning major version 10 keeps lockfile
