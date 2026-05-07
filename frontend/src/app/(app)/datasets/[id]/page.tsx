@@ -12,9 +12,12 @@ import { ArrowLeft, FileText, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
+import { ProfileSection } from "@/components/datasets/profile-section";
+import { ShareSection } from "@/components/datasets/share-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { ApiError } from "@/lib/api";
 import { getDataset } from "@/lib/data-actions";
 import { useT } from "@/lib/i18n/provider";
@@ -33,6 +36,7 @@ export default function DatasetDetailPage() {
   const t = useT();
   const params = useParams<{ id: string }>();
   const id = params.id;
+  const me = useCurrentUser();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["dataset", id],
@@ -115,6 +119,18 @@ export default function DatasetDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Profile (slice E) */}
+      <ProfileSection datasetId={data.id} />
+
+      {/* Sharing (slice F) */}
+      {me.data && (
+        <ShareSection
+          datasetId={data.id}
+          currentUserId={me.data.user.id}
+          initialVisibility={data.visibility}
+        />
+      )}
 
       {/* Sample rows */}
       {data.sample_rows.length > 0 && (

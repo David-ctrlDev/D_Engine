@@ -120,11 +120,157 @@ class DatasetListResponse(BaseModel):
     datasets: list[DatasetSummary]
 
 
+# ---------------------------------------------------------------------------
+# Database sources (slice C — postgres; slice D extends to mssql)
+# ---------------------------------------------------------------------------
+
+
+class DatabaseConnectionConfig(_StrictModel):
+    """User-supplied DB credentials. Slice C accepts only postgres.
+
+    The frontend collects these in a form; we never echo the password
+    back. The backend encrypts the dict and stores it in
+    ``data_sources.connection_config_encrypted``.
+    """
+
+    kind: DataSourceKind  # only "postgres" honoured in slice C
+    name: str = Field(min_length=1, max_length=120)
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=5432, ge=1, le=65535)
+    database: str = Field(min_length=1, max_length=255)
+    user: str = Field(min_length=1, max_length=255)
+    password: str = Field(min_length=0, max_length=500)
+    sslmode: str = Field(default="prefer", max_length=32)
+
+
+class ConnectionTestResponse(BaseModel):
+    ok: bool
+    error: str | None = None
+
+
+class TableInfoPublic(BaseModel):
+    schema_name: str = Field(alias="schema")
+    name: str
+    estimated_rows: int | None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class TablesListResponse(BaseModel):
+    tables: list[TableInfoPublic]
+
+
+class ImportTableRequest(_StrictModel):
+    """One row in the import payload. ``dataset_name`` defaults to
+    ``{schema}.{table}`` if omitted."""
+
+    schema_name: str = Field(min_length=1, max_length=255, alias="schema")
+    table: str = Field(min_length=1, max_length=255)
+    dataset_name: str | None = Field(default=None, max_length=160)
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid", str_strip_whitespace=True)
+
+
+class ImportTablesRequest(_StrictModel):
+    tables: list[ImportTableRequest] = Field(min_length=1, max_length=50)
+
+
+class ImportTablesResponse(BaseModel):
+    datasets: list[DatasetSummary]
+
+
+class DataSourceListResponse(BaseModel):
+    sources: list[DataSourcePublic]
+
+
+# ---------------------------------------------------------------------------
+# Profiling (slice E)
+# ---------------------------------------------------------------------------
+
+
+class TopValue(BaseModel):
+    value: str
+    count: int
+
+
+class ColumnProfile(BaseModel):
+    name: str
+    dtype: str
+    null_count: int
+    null_pct: float
+    distinct_count: int | None
+    min: str | None
+    max: str | None
+    top_values: list[TopValue] = Field(default_factory=list)
+
+
+class DatasetProfile(BaseModel):
+    id: UUID
+    dataset_id: UUID
+    status: str
+    row_count: int | None
+    columns: list[ColumnProfile] = Field(default_factory=list)
+    started_at: datetime
+    completed_at: datetime | None
+    error: str | None
+
+
+# ---------------------------------------------------------------------------
+# Sharing (slice F)
+# ---------------------------------------------------------------------------
+
+
+class UpdateVisibilityRequest(_StrictModel):
+    visibility: DatasetVisibility
+
+
+class GrantUserRequest(_StrictModel):
+    user_id: UUID
+
+
+class DatasetGrantPublic(BaseModel):
+    id: UUID
+    user_id: UUID
+    user_email: str
+    granted_at: datetime
+
+
+class DatasetGrantsResponse(BaseModel):
+    grants: list[DatasetGrantPublic]
+
+
+class WorkspaceMember(BaseModel):
+    user_id: UUID
+    email: str
+    role: str
+
+
+class WorkspaceMembersResponse(BaseModel):
+    members: list[WorkspaceMember]
+
+
 __all__ = [
+    "ColumnProfile",
+    "ConnectionTestResponse",
+    "DataSourceListResponse",
     "DataSourcePublic",
+    "DatabaseConnectionConfig",
     "DatasetColumn",
     "DatasetCreatedResponse",
     "DatasetDetail",
+    "DatasetGrantPublic",
+    "DatasetGrantsResponse",
     "DatasetListResponse",
+    "DatasetProfile",
     "DatasetSummary",
+    "GrantUserRequest",
+    "ImportTableRequest",
+    "ImportTablesRequest",
+    "ImportTablesResponse",
+    "TableInfoPublic",
+    "TablesListResponse",
+    "TopValue",
+    "UpdateVisibilityRequest",
+    "WorkspaceMember",
+    "WorkspaceMembersResponse",
 ]

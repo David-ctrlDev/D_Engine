@@ -26,7 +26,7 @@ import { uploadDataset } from "@/lib/data-actions";
 import { useT } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
 
-const ACCEPTED_EXTS = [".csv"];
+const ACCEPTED_EXTS = [".csv", ".parquet", ".xlsx", ".xls"];
 
 export default function UploadDatasetPage() {
   const t = useT();

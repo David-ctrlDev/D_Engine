@@ -9,7 +9,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { Database, Loader2, Plus } from "lucide-react";
+import { Database, Loader2, Plug, Upload } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -42,9 +42,14 @@ export default function DatasetsPage() {
           <h1 className="text-2xl font-semibold tracking-tight">{t("datasets.title")}</h1>
           <p className="text-muted-foreground text-sm">{t("datasets.subtitle")}</p>
         </div>
-        <Button render={<Link href="/datasets/upload" />}>
-          <Plus className="size-4" /> {t("datasets.upload_cta")}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" render={<Link href="/sources/new" />}>
+            <Plug className="size-4" /> {t("datasets.connect_cta")}
+          </Button>
+          <Button render={<Link href="/datasets/upload" />}>
+            <Upload className="size-4" /> {t("datasets.upload_cta")}
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -77,9 +82,14 @@ function EmptyState({ t }: { t: ReturnType<typeof useT> }) {
           <h2 className="text-base font-semibold">{t("datasets.empty.title")}</h2>
           <p className="text-muted-foreground text-sm">{t("datasets.empty.body")}</p>
         </div>
-        <Button render={<Link href="/datasets/upload" />}>
-          <Plus className="size-4" /> {t("datasets.empty.cta")}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" render={<Link href="/sources/new" />}>
+            <Plug className="size-4" /> {t("datasets.empty.connect")}
+          </Button>
+          <Button render={<Link href="/datasets/upload" />}>
+            <Upload className="size-4" /> {t("datasets.empty.cta")}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
