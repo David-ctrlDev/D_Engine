@@ -43,6 +43,10 @@ if TYPE_CHECKING:
 # Truncate every domain table between tests. Order doesn't matter because
 # we use CASCADE, but listing them keeps the intent explicit.
 DOMAIN_TABLES: tuple[str, ...] = (
+    "profile_runs",
+    "dataset_grants",
+    "datasets",
+    "data_sources",
     "audit_log",
     "auth_tokens",
     "refresh_tokens",
