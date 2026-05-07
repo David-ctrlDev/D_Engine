@@ -1,18 +1,19 @@
+"use client";
+
+import { AuthPageHeader } from "@/components/auth/auth-page-header";
 import { RegisterForm } from "@/components/auth/register-form";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useT } from "@/lib/i18n/provider";
 
 export default function RegisterPage() {
+  const t = useT();
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Create your workspace</CardTitle>
-        <CardDescription>
-          Sign up to start preparing data. You become the owner of a fresh workspace.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <RegisterForm />
-      </CardContent>
-    </Card>
+    <>
+      <AuthPageHeader
+        eyebrow={t("auth.register.eyebrow")}
+        title={t("auth.register.title")}
+        subtitle={t("auth.register.subtitle")}
+      />
+      <RegisterForm />
+    </>
   );
 }

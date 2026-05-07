@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { QueryProvider } from "@/components/query-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { LocaleProvider } from "@/lib/i18n/provider";
 
 import "./globals.css";
 
@@ -29,18 +30,21 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="es"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-      // next-themes flips this class between requests; ignoring the
-      // mismatch warning is the canonical workaround.
+      // next-themes flips the class on <html>; LocaleProvider mutates the
+      // ``lang`` attribute on locale change. Both are intentional, so
+      // suppress the hydration mismatch warning here.
       suppressHydrationWarning
     >
       <body className="bg-background text-foreground flex min-h-full flex-col">
         <ThemeProvider>
-          <QueryProvider>
-            {children}
-            <Toaster richColors closeButton />
-          </QueryProvider>
+          <LocaleProvider>
+            <QueryProvider>
+              {children}
+              <Toaster richColors closeButton />
+            </QueryProvider>
+          </LocaleProvider>
         </ThemeProvider>
       </body>
     </html>

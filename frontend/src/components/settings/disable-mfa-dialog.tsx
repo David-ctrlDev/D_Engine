@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -19,20 +19,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api";
 import { authApi } from "@/lib/auth-actions";
-import { mfaDisableSchema, type MFADisableFormValues } from "@/lib/auth-schemas";
+import { buildMFADisableSchema, type MFADisableFormValues } from "@/lib/auth-schemas";
+import { useT } from "@/lib/i18n/provider";
 
 export function DisableMFADialog({ onDisabled }: { onDisabled: () => void }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
+  const schema = useMemo(() => buildMFADisableSchema(t), [t]);
   const {
     register,
     handleSubmit,
     formState: { errors },
     reset,
   } = useForm<MFADisableFormValues>({
-    resolver: zodResolver(mfaDisableSchema),
+    resolver: zodResolver(schema),
     defaultValues: { password: "", code: "" },
   });
 
@@ -43,10 +46,10 @@ export function DisableMFADialog({ onDisabled }: { onDisabled: () => void }) {
       await authApi.mfaDisable(values);
       reset();
       setOpen(false);
-      toast.success("Multi-factor authentication disabled.");
+      toast.success(t("settings.mfa.disable.toast_success"));
       onDisabled();
     } catch (e) {
-      setServerError(e instanceof ApiError ? e.message : "Failed to disable MFA.");
+      setServerError(e instanceof ApiError ? e.message : t("settings.mfa.disable.toast_failed"));
     } finally {
       setSubmitting(false);
     }
@@ -54,21 +57,18 @@ export function DisableMFADialog({ onDisabled }: { onDisabled: () => void }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {/* Base UI's DialogTrigger doesn't accept asChild; use ``render``
-          to compose the destructive Button as the trigger element. */}
-      <DialogTrigger render={<Button variant="destructive">Disable MFA</Button>} />
+      <DialogTrigger
+        render={<Button variant="destructive">{t("settings.mfa.disable.trigger")}</Button>}
+      />
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Disable multi-factor authentication</DialogTitle>
-          <DialogDescription>
-            Confirm your password and a current authenticator code. After disabling, any leftover
-            recovery codes are also invalidated.
-          </DialogDescription>
+          <DialogTitle>{t("settings.mfa.disable.title")}</DialogTitle>
+          <DialogDescription>{t("settings.mfa.disable.description")}</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
           <div className="space-y-2">
-            <Label htmlFor="disable-password">Password</Label>
+            <Label htmlFor="disable-password">{t("common.password")}</Label>
             <Input
               id="disable-password"
               type="password"
@@ -82,7 +82,7 @@ export function DisableMFADialog({ onDisabled }: { onDisabled: () => void }) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="disable-code">Authentication code</Label>
+            <Label htmlFor="disable-code">{t("settings.mfa.scan.code_label")}</Label>
             <Input
               id="disable-code"
               inputMode="numeric"
@@ -102,10 +102,10 @@ export function DisableMFADialog({ onDisabled }: { onDisabled: () => void }) {
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
+              {t("settings.mfa.scan.cancel")}
             </Button>
             <Button type="submit" variant="destructive" disabled={submitting}>
-              {submitting ? "Disabling…" : "Disable MFA"}
+              {submitting ? t("settings.mfa.disable.submitting") : t("settings.mfa.disable.submit")}
             </Button>
           </DialogFooter>
         </form>

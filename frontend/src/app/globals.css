@@ -128,3 +128,60 @@
     @apply font-sans;
   }
 }
+
+/* -------------------------------------------------------------------------
+ * Auth hero ambient blobs
+ *
+ * Three large radial-gradient circles drift slowly across the hero panel.
+ * Each is GPU-accelerated (transform-only) and respects reduced-motion.
+ * ------------------------------------------------------------------------- */
+@keyframes blob-drift-a {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(8%, -6%) scale(1.08);
+  }
+  100% {
+    transform: translate(-4%, 4%) scale(0.96);
+  }
+}
+@keyframes blob-drift-b {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-7%, 5%) scale(1.05);
+  }
+  100% {
+    transform: translate(5%, -3%) scale(0.98);
+  }
+}
+@keyframes blob-drift-c {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(4%, 7%) scale(0.95);
+  }
+  100% {
+    transform: translate(-6%, -4%) scale(1.06);
+  }
+}
+.blob-a {
+  animation: blob-drift-a 14s ease-in-out infinite alternate;
+}
+.blob-b {
+  animation: blob-drift-b 16s ease-in-out infinite alternate;
+}
+.blob-c {
+  animation: blob-drift-c 18s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blob-a,
+  .blob-b,
+  .blob-c {
+    animation: none;
+  }
+}

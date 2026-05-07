@@ -9,6 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LoginForm } from "@/components/auth/login-form";
+import { LocaleProvider } from "@/lib/i18n/provider";
 
 const replace = vi.fn();
 const push = vi.fn();
@@ -24,9 +25,11 @@ vi.mock("@/lib/auth-actions", () => ({
 function renderForm() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={client}>
-      <LoginForm />
-    </QueryClientProvider>,
+    <LocaleProvider>
+      <QueryClientProvider client={client}>
+        <LoginForm />
+      </QueryClientProvider>
+    </LocaleProvider>,
   );
 }
 
@@ -48,9 +51,9 @@ describe("LoginForm", () => {
     renderForm();
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText(/email/i), "alice@acme.io");
-    await user.type(screen.getByLabelText(/^password$/i), "any-password");
-    await user.click(screen.getByRole("button", { name: /sign in/i }));
+    await user.type(screen.getByLabelText(/correo/i), "alice@acme.io");
+    await user.type(screen.getByLabelText(/^contraseña$/i), "any-password");
+    await user.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
     await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
   });
@@ -64,9 +67,9 @@ describe("LoginForm", () => {
     renderForm();
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText(/email/i), "alice@acme.io");
-    await user.type(screen.getByLabelText(/^password$/i), "any-password");
-    await user.click(screen.getByRole("button", { name: /sign in/i }));
+    await user.type(screen.getByLabelText(/correo/i), "alice@acme.io");
+    await user.type(screen.getByLabelText(/^contraseña$/i), "any-password");
+    await user.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
     await vi.waitFor(() => expect(push).toHaveBeenCalledWith("/login/mfa"));
     expect(sessionStorage.getItem("mfa_token")).toBe("fake-mfa-jwt");
@@ -79,9 +82,9 @@ describe("LoginForm", () => {
     renderForm();
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText(/email/i), "alice@acme.io");
-    await user.type(screen.getByLabelText(/^password$/i), "wrong");
-    await user.click(screen.getByRole("button", { name: /sign in/i }));
+    await user.type(screen.getByLabelText(/correo/i), "alice@acme.io");
+    await user.type(screen.getByLabelText(/^contraseña$/i), "wrong");
+    await user.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
     expect(await screen.findByText(/invalid email or password/i)).toBeInTheDocument();
   });

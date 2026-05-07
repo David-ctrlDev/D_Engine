@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -12,9 +12,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api";
 import { authApi } from "@/lib/auth-actions";
-import { resetPasswordSchema, type ResetPasswordFormValues } from "@/lib/auth-schemas";
+import { buildResetPasswordSchema, type ResetPasswordFormValues } from "@/lib/auth-schemas";
+import { useT } from "@/lib/i18n/provider";
 
 export function ResetPasswordForm() {
+  const t = useT();
   const router = useRouter();
   const params = useSearchParams();
   const token = params.get("token") ?? "";
@@ -22,12 +24,13 @@ export function ResetPasswordForm() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
 
+  const schema = useMemo(() => buildResetPasswordSchema(t), [t]);
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<ResetPasswordFormValues>({
-    resolver: zodResolver(resetPasswordSchema),
+    resolver: zodResolver(schema),
     defaultValues: { new_password: "", confirm_password: "" },
   });
 
@@ -37,7 +40,7 @@ export function ResetPasswordForm() {
     setSuggestions([]);
     try {
       await authApi.passwordReset({ token, new_password: values.new_password });
-      toast.success("Password updated. Please sign in.");
+      toast.success(t("auth.reset.toast_success"));
       router.replace("/login");
     } catch (e) {
       if (e instanceof ApiError) {
@@ -45,7 +48,7 @@ export function ResetPasswordForm() {
         const detail = e.detail as { suggestions?: string[] } | undefined;
         if (detail?.suggestions) setSuggestions(detail.suggestions);
       } else {
-        setServerError("Something went wrong.");
+        setServerError(t("common.something_went_wrong"));
       }
     } finally {
       setSubmitting(false);
@@ -55,23 +58,24 @@ export function ResetPasswordForm() {
   if (!token) {
     return (
       <div className="space-y-3 text-sm">
-        <p>Missing or invalid reset link.</p>
+        <p>{t("auth.reset.invalid_link")}</p>
         <Link href="/forgot-password" className="text-foreground underline">
-          Request a new link
+          {t("auth.reset.request_new")}
         </Link>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
       <div className="space-y-2">
-        <Label htmlFor="reset-password">New password</Label>
+        <Label htmlFor="reset-password">{t("auth.reset.new_password")}</Label>
         <Input
           id="reset-password"
           type="password"
           autoComplete="new-password"
           aria-invalid={!!errors.new_password}
+          className="h-11"
           {...register("new_password")}
         />
         {errors.new_password && (
@@ -80,12 +84,13 @@ export function ResetPasswordForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="reset-confirm">Confirm password</Label>
+        <Label htmlFor="reset-confirm">{t("common.confirm_password")}</Label>
         <Input
           id="reset-confirm"
           type="password"
           autoComplete="new-password"
           aria-invalid={!!errors.confirm_password}
+          className="h-11"
           {...register("confirm_password")}
         />
         {errors.confirm_password && (
@@ -106,8 +111,12 @@ export function ResetPasswordForm() {
         </div>
       )}
 
-      <Button type="submit" className="w-full" disabled={submitting}>
-        {submitting ? "Updating…" : "Update password"}
+      <Button
+        type="submit"
+        className="h-11 w-full bg-gradient-to-r from-sky-500 via-indigo-500 to-fuchsia-500 text-white shadow-lg shadow-indigo-500/20 transition-shadow hover:shadow-indigo-500/30 disabled:opacity-70"
+        disabled={submitting}
+      >
+        {submitting ? t("auth.reset.submitting") : t("auth.reset.submit")}
       </Button>
     </form>
   );

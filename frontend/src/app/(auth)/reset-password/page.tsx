@@ -1,23 +1,23 @@
+"use client";
+
 import { Suspense } from "react";
 
+import { AuthPageHeader } from "@/components/auth/auth-page-header";
 import { ResetPasswordForm } from "@/components/auth/reset-password-form";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useT } from "@/lib/i18n/provider";
 
 export default function ResetPasswordPage() {
+  const t = useT();
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Choose a new password</CardTitle>
-        <CardDescription>
-          Pick a strong password — at least 12 characters. A passphrase works well.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {/* useSearchParams() requires a Suspense boundary in the App Router. */}
-        <Suspense>
-          <ResetPasswordForm />
-        </Suspense>
-      </CardContent>
-    </Card>
+    <>
+      <AuthPageHeader
+        eyebrow={t("auth.reset.eyebrow")}
+        title={t("auth.reset.title")}
+        subtitle={t("auth.reset.subtitle")}
+      />
+      <Suspense>
+        <ResetPasswordForm />
+      </Suspense>
+    </>
   );
 }

@@ -1,18 +1,19 @@
+"use client";
+
+import { AuthPageHeader } from "@/components/auth/auth-page-header";
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useT } from "@/lib/i18n/provider";
 
 export default function ForgotPasswordPage() {
+  const t = useT();
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Reset your password</CardTitle>
-        <CardDescription>
-          Enter your email and we&apos;ll send you a link to choose a new password.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ForgotPasswordForm />
-      </CardContent>
-    </Card>
+    <>
+      <AuthPageHeader
+        eyebrow={t("auth.forgot.eyebrow")}
+        title={t("auth.forgot.title")}
+        subtitle={t("auth.forgot.subtitle")}
+      />
+      <ForgotPasswordForm />
+    </>
   );
 }

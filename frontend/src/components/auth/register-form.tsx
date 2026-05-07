@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -12,20 +12,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api";
 import { authApi } from "@/lib/auth-actions";
-import { registerSchema, type RegisterFormValues } from "@/lib/auth-schemas";
+import { buildRegisterSchema, type RegisterFormValues } from "@/lib/auth-schemas";
+import { useT } from "@/lib/i18n/provider";
 
 export function RegisterForm() {
+  const t = useT();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
 
+  const schema = useMemo(() => buildRegisterSchema(t), [t]);
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<RegisterFormValues>({
-    resolver: zodResolver(registerSchema),
+    resolver: zodResolver(schema),
     defaultValues: { email: "", password: "", workspace_name: "" },
   });
 
@@ -35,7 +38,7 @@ export function RegisterForm() {
     setSuggestions([]);
     try {
       const result = await authApi.register(values);
-      toast.success("Account created. Check your terminal for the verification link.");
+      toast.success(t("auth.register.toast_success"));
       router.replace(
         `/verify-email?email=${encodeURIComponent(values.email)}&user=${result.user_id}`,
       );
@@ -45,7 +48,7 @@ export function RegisterForm() {
         const detail = e.detail as { suggestions?: string[] } | undefined;
         if (detail?.suggestions) setSuggestions(detail.suggestions);
       } else {
-        setServerError("Something went wrong. Try again.");
+        setServerError(t("common.something_went_wrong"));
       }
     } finally {
       setSubmitting(false);
@@ -53,26 +56,28 @@ export function RegisterForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
       <div className="space-y-2">
-        <Label htmlFor="register-email">Email</Label>
+        <Label htmlFor="register-email">{t("common.email")}</Label>
         <Input
           id="register-email"
           type="email"
           autoComplete="email"
           aria-invalid={!!errors.email}
+          className="h-11"
           {...register("email")}
         />
         {errors.email && <p className="text-destructive text-sm">{errors.email.message}</p>}
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="register-workspace">Workspace name</Label>
+        <Label htmlFor="register-workspace">{t("common.workspace_name")}</Label>
         <Input
           id="register-workspace"
           autoComplete="organization"
-          placeholder="Acme Inc"
+          placeholder={t("auth.register.workspace_placeholder")}
           aria-invalid={!!errors.workspace_name}
+          className="h-11"
           {...register("workspace_name")}
         />
         {errors.workspace_name && (
@@ -81,18 +86,17 @@ export function RegisterForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="register-password">Password</Label>
+        <Label htmlFor="register-password">{t("common.password")}</Label>
         <Input
           id="register-password"
           type="password"
           autoComplete="new-password"
           aria-invalid={!!errors.password}
+          className="h-11"
           {...register("password")}
         />
         {errors.password && <p className="text-destructive text-sm">{errors.password.message}</p>}
-        <p className="text-muted-foreground text-xs">
-          At least 12 characters. A passphrase of three or four random words works well.
-        </p>
+        <p className="text-muted-foreground text-xs">{t("auth.register.password_hint")}</p>
       </div>
 
       {serverError && (
@@ -108,14 +112,18 @@ export function RegisterForm() {
         </div>
       )}
 
-      <Button type="submit" className="w-full" disabled={submitting}>
-        {submitting ? "Creating account…" : "Create account"}
+      <Button
+        type="submit"
+        className="h-11 w-full bg-gradient-to-r from-sky-500 via-indigo-500 to-fuchsia-500 text-white shadow-lg shadow-indigo-500/20 transition-shadow hover:shadow-indigo-500/30 disabled:opacity-70"
+        disabled={submitting}
+      >
+        {submitting ? t("auth.register.submitting") : t("auth.register.submit")}
       </Button>
 
       <p className="text-muted-foreground text-center text-sm">
-        Already have an account?{" "}
+        {t("auth.register.have_account")}{" "}
         <Link href="/login" className="text-foreground underline">
-          Log in
+          {t("auth.register.login_link")}
         </Link>
       </p>
     </form>

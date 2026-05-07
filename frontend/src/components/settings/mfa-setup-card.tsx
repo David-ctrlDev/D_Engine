@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -14,24 +14,27 @@ import { Label } from "@/components/ui/label";
 import { CURRENT_USER_QUERY_KEY } from "@/hooks/use-current-user";
 import { ApiError } from "@/lib/api";
 import { authApi } from "@/lib/auth-actions";
-import { mfaSetupConfirmSchema, type MFASetupConfirmFormValues } from "@/lib/auth-schemas";
+import { buildMFASetupConfirmSchema, type MFASetupConfirmFormValues } from "@/lib/auth-schemas";
+import { useT } from "@/lib/i18n/provider";
 
 type SetupState = { secret: string; qrDataUri: string } | null;
 
 export function MFASetupCard({ onConfirmed }: { onConfirmed: (recoveryCodes: string[]) => void }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const [setup, setSetup] = useState<SetupState>(null);
   const [starting, setStarting] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
+  const schema = useMemo(() => buildMFASetupConfirmSchema(t), [t]);
   const {
     register,
     handleSubmit,
     formState: { errors },
     reset,
   } = useForm<MFASetupConfirmFormValues>({
-    resolver: zodResolver(mfaSetupConfirmSchema),
+    resolver: zodResolver(schema),
     defaultValues: { code: "" },
   });
 
@@ -42,7 +45,7 @@ export function MFASetupCard({ onConfirmed }: { onConfirmed: (recoveryCodes: str
       const result = await authApi.mfaSetup();
       setSetup({ secret: result.secret, qrDataUri: result.qr_data_uri });
     } catch (e) {
-      setServerError(e instanceof ApiError ? e.message : "Failed to start MFA setup.");
+      setServerError(e instanceof ApiError ? e.message : t("settings.mfa.failed_start"));
     } finally {
       setStarting(false);
     }
@@ -55,13 +58,11 @@ export function MFASetupCard({ onConfirmed }: { onConfirmed: (recoveryCodes: str
       const result = await authApi.mfaSetupConfirm({ code: values.code });
       reset();
       setSetup(null);
-      // Refresh /me — although /me's payload doesn't currently expose mfa
-      // state, future iterations may add it. Cheap insurance.
       queryClient.invalidateQueries({ queryKey: CURRENT_USER_QUERY_KEY });
-      toast.success("Multi-factor authentication enabled.");
+      toast.success(t("settings.mfa.toast_enabled"));
       onConfirmed(result.recovery_codes);
     } catch (e) {
-      setServerError(e instanceof ApiError ? e.message : "Failed to confirm code.");
+      setServerError(e instanceof ApiError ? e.message : t("settings.mfa.failed_confirm"));
     } finally {
       setConfirming(false);
     }
@@ -71,15 +72,13 @@ export function MFASetupCard({ onConfirmed }: { onConfirmed: (recoveryCodes: str
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Multi-factor authentication</CardTitle>
-          <CardDescription>
-            Add a second factor — a code from an authenticator app — required at every sign-in.
-          </CardDescription>
+          <CardTitle>{t("settings.mfa.disabled.title")}</CardTitle>
+          <CardDescription>{t("settings.mfa.disabled.description")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {serverError && <p className="text-destructive text-sm">{serverError}</p>}
           <Button onClick={startSetup} disabled={starting}>
-            {starting ? "Starting…" : "Set up MFA"}
+            {starting ? t("settings.mfa.disabled.starting") : t("settings.mfa.disabled.start")}
           </Button>
         </CardContent>
       </Card>
@@ -89,11 +88,8 @@ export function MFASetupCard({ onConfirmed }: { onConfirmed: (recoveryCodes: str
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Scan this QR code</CardTitle>
-        <CardDescription>
-          Open Google Authenticator, Authy, or 1Password and scan. Then enter the 6-digit code
-          below.
-        </CardDescription>
+        <CardTitle>{t("settings.mfa.scan.title")}</CardTitle>
+        <CardDescription>{t("settings.mfa.scan.description")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="bg-muted/30 flex flex-col items-center gap-3 rounded-md border p-4">
@@ -106,13 +102,13 @@ export function MFASetupCard({ onConfirmed }: { onConfirmed: (recoveryCodes: str
             unoptimized
           />
           <p className="text-muted-foreground break-all text-center text-xs">
-            Or enter manually: <code className="font-mono">{setup.secret}</code>
+            {t("settings.mfa.scan.manual_prefix")} <code className="font-mono">{setup.secret}</code>
           </p>
         </div>
 
         <form onSubmit={handleSubmit(onConfirm)} className="space-y-3" noValidate>
           <div className="space-y-2">
-            <Label htmlFor="mfa-confirm-code">Authentication code</Label>
+            <Label htmlFor="mfa-confirm-code">{t("settings.mfa.scan.code_label")}</Label>
             <Input
               id="mfa-confirm-code"
               inputMode="numeric"
@@ -132,7 +128,7 @@ export function MFASetupCard({ onConfirmed }: { onConfirmed: (recoveryCodes: str
 
           <div className="flex gap-2">
             <Button type="submit" disabled={confirming}>
-              {confirming ? "Confirming…" : "Confirm"}
+              {confirming ? t("settings.mfa.scan.confirming") : t("settings.mfa.scan.confirm")}
             </Button>
             <Button
               type="button"
@@ -142,7 +138,7 @@ export function MFASetupCard({ onConfirmed }: { onConfirmed: (recoveryCodes: str
                 setSetup(null);
               }}
             >
-              Cancel
+              {t("settings.mfa.scan.cancel")}
             </Button>
           </div>
         </form>

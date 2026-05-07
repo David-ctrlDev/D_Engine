@@ -2,29 +2,34 @@
 
 /**
  * Minimal sidebar — designed to grow as the data-prep features land.
- * Highlights the active route and is collapsible to icons on small screens.
+ * Highlights the active route. Hidden on small screens.
  */
 
 import { Cog, LayoutDashboard, Shield } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { BrandLogo } from "@/components/brand-logo";
+import type { DictionaryKey } from "@/lib/i18n/dictionaries";
+import { useT } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/settings/security", label: "Security", icon: Shield },
-] as const;
+const NAV_ITEMS: { href: string; labelKey: DictionaryKey; icon: typeof LayoutDashboard }[] = [
+  { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { href: "/settings/security", labelKey: "nav.security", icon: Shield },
+];
 
 export function Sidebar() {
+  const t = useT();
   const pathname = usePathname();
   return (
-    <aside className="bg-background hidden w-56 shrink-0 border-r md:block">
-      <div className="flex h-14 items-center border-b px-4 text-base font-semibold tracking-tight">
-        dataprep
+    <aside className="bg-background hidden w-56 shrink-0 flex-col border-r md:flex">
+      <div className="flex h-14 items-center gap-2 border-b px-4">
+        <BrandLogo className="h-6 w-auto" />
+        <span className="text-base font-semibold tracking-tight">{t("brand.name")}</span>
       </div>
-      <nav className="flex flex-col gap-1 p-3">
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+      <nav className="flex flex-1 flex-col gap-1 p-3">
+        {NAV_ITEMS.map(({ href, labelKey, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
           return (
             <Link
@@ -38,12 +43,12 @@ export function Sidebar() {
               )}
             >
               <Icon className="size-4" />
-              {label}
+              {t(labelKey)}
             </Link>
           );
         })}
       </nav>
-      <div className="text-muted-foreground mt-auto p-3 text-xs">
+      <div className="text-muted-foreground p-3 text-xs">
         <Cog className="mr-1 inline size-3" /> v0
       </div>
     </aside>

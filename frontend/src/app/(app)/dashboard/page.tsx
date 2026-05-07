@@ -1,41 +1,36 @@
 "use client";
 
 /**
- * Placeholder for the post-login landing. The data-prep features (ingestion,
- * profiling, training-table builder, LLM-context bundle) live here in
- * subsequent iterations.
+ * Placeholder for the post-login landing.
  */
 
-import { useCurrentUser } from "@/hooks/use-current-user";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { useT } from "@/lib/i18n/provider";
 
 export default function DashboardPage() {
+  const t = useT();
   const { data } = useCurrentUser();
-  if (!data) return null; // gated by the layout
+  if (!data) return null;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Hello, {data.user.email}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {t("dashboard.greeting", { email: data.user.email })}
+        </h1>
         <p className="text-muted-foreground text-sm">
-          Workspace: <span className="font-medium">{data.tenant.name}</span>
+          {t("dashboard.workspace_label")} <span className="font-medium">{data.tenant.name}</span>
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Welcome to dataprep</CardTitle>
+          <CardTitle>{t("dashboard.welcome_title")}</CardTitle>
         </CardHeader>
         <CardContent className="text-muted-foreground space-y-2 text-sm">
-          <p>
-            Authentication is up and running. The data preparation features land in the next
-            iterations: data source connectors, profiling, cleansing rules, ML training-table
-            builder, and the LLM-context bundle exporter.
-          </p>
-          <p>
-            For now, head to <strong>Security</strong> in the sidebar to set up multi-factor
-            authentication.
-          </p>
+          <p>{t("dashboard.welcome_body_a")}</p>
+          <p>{t("dashboard.welcome_body_b")}</p>
         </CardContent>
       </Card>
     </div>

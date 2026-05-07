@@ -1,18 +1,19 @@
+"use client";
+
+import { AuthPageHeader } from "@/components/auth/auth-page-header";
 import { MFAForm } from "@/components/auth/mfa-form";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useT } from "@/lib/i18n/provider";
 
 export default function LoginMFAPage() {
+  const t = useT();
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Two-factor authentication</CardTitle>
-        <CardDescription>
-          Enter the 6-digit code from your authenticator app to finish signing in.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <MFAForm />
-      </CardContent>
-    </Card>
+    <>
+      <AuthPageHeader
+        eyebrow={t("auth.mfa.eyebrow")}
+        title={t("auth.mfa.title")}
+        subtitle={t("auth.mfa.subtitle")}
+      />
+      <MFAForm />
+    </>
   );
 }

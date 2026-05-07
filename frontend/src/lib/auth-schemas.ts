@@ -1,67 +1,83 @@
 /**
  * Zod schemas for the auth forms.
  *
- * Validation here is a UX hint — the backend re-checks everything.
- * Password strength specifically is delegated entirely to the backend
- * (zxcvbn) so the frontend doesn't need to ship the wordlist.
+ * Each schema is built by a factory that takes the translator function so
+ * validation messages render in the active locale. Strength validation is
+ * delegated to the backend (zxcvbn); we only enforce shape and length here.
  */
 
 import { z } from "zod";
 
-const email = z.string().email("Enter a valid email address.");
+import type { DictionaryKey } from "@/lib/i18n/dictionaries";
 
-const minPassword = z
-  .string()
-  .min(12, "Password must be at least 12 characters long.")
-  .max(200, "Password is too long.");
+type T = (key: DictionaryKey) => string;
 
-export const registerSchema = z.object({
-  email,
-  password: minPassword,
-  workspace_name: z
-    .string()
-    .min(1, "Workspace name is required.")
-    .max(120, "Workspace name is too long."),
-});
-export type RegisterFormValues = z.infer<typeof registerSchema>;
-
-export const loginSchema = z.object({
-  email,
-  password: z.string().min(1, "Password is required."),
-});
-export type LoginFormValues = z.infer<typeof loginSchema>;
-
-export const mfaCodeSchema = z.object({
-  code: z
-    .string()
-    .min(1, "Enter a code.")
-    .max(64, "Code is too long.")
-    // Accept either 6 digits (TOTP) or a recovery code with hyphens.
-    .regex(/^[0-9A-Za-z\- ]+$/, "Only digits, letters, hyphens and spaces."),
-});
-export type MFACodeFormValues = z.infer<typeof mfaCodeSchema>;
-
-export const forgotPasswordSchema = z.object({ email });
-export type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>;
-
-export const resetPasswordSchema = z
-  .object({
-    new_password: minPassword,
-    confirm_password: z.string().min(1, "Confirm your password."),
-  })
-  .refine((d) => d.new_password === d.confirm_password, {
-    message: "Passwords do not match.",
-    path: ["confirm_password"],
+export function buildLoginSchema(t: T) {
+  return z.object({
+    email: z.string().email(t("auth.login.email_required")),
+    password: z.string().min(1, t("auth.login.password_required")),
   });
-export type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
+}
+export type LoginFormValues = z.infer<ReturnType<typeof buildLoginSchema>>;
 
-export const mfaSetupConfirmSchema = z.object({
-  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code from your app."),
-});
-export type MFASetupConfirmFormValues = z.infer<typeof mfaSetupConfirmSchema>;
+export function buildRegisterSchema(t: T) {
+  return z.object({
+    email: z.string().email(t("auth.login.email_required")),
+    password: z
+      .string()
+      .min(12, t("auth.register.password_too_short"))
+      .max(200, t("auth.register.password_too_long")),
+    workspace_name: z
+      .string()
+      .min(1, t("auth.register.workspace_required"))
+      .max(120, t("auth.register.workspace_too_long")),
+  });
+}
+export type RegisterFormValues = z.infer<ReturnType<typeof buildRegisterSchema>>;
 
-export const mfaDisableSchema = z.object({
-  password: z.string().min(1, "Password is required."),
-  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code from your app."),
-});
-export type MFADisableFormValues = z.infer<typeof mfaDisableSchema>;
+export function buildMFACodeSchema(t: T) {
+  return z.object({
+    code: z
+      .string()
+      .min(1, t("auth.mfa.code_required"))
+      .max(64, t("auth.mfa.code_too_long"))
+      .regex(/^[0-9A-Za-z\- ]+$/, t("auth.mfa.code_charset")),
+  });
+}
+export type MFACodeFormValues = z.infer<ReturnType<typeof buildMFACodeSchema>>;
+
+export function buildForgotPasswordSchema(t: T) {
+  return z.object({ email: z.string().email(t("auth.login.email_required")) });
+}
+export type ForgotPasswordFormValues = z.infer<ReturnType<typeof buildForgotPasswordSchema>>;
+
+export function buildResetPasswordSchema(t: T) {
+  return z
+    .object({
+      new_password: z
+        .string()
+        .min(12, t("auth.register.password_too_short"))
+        .max(200, t("auth.register.password_too_long")),
+      confirm_password: z.string().min(1, t("auth.reset.confirm_required")),
+    })
+    .refine((d) => d.new_password === d.confirm_password, {
+      message: t("auth.reset.passwords_dont_match"),
+      path: ["confirm_password"],
+    });
+}
+export type ResetPasswordFormValues = z.infer<ReturnType<typeof buildResetPasswordSchema>>;
+
+export function buildMFASetupConfirmSchema(t: T) {
+  return z.object({
+    code: z.string().regex(/^\d{6}$/, t("settings.mfa.scan.code_required")),
+  });
+}
+export type MFASetupConfirmFormValues = z.infer<ReturnType<typeof buildMFASetupConfirmSchema>>;
+
+export function buildMFADisableSchema(t: T) {
+  return z.object({
+    password: z.string().min(1, t("settings.mfa.disable.password_required")),
+    code: z.string().regex(/^\d{6}$/, t("settings.mfa.disable.code_required")),
+  });
+}
+export type MFADisableFormValues = z.infer<ReturnType<typeof buildMFADisableSchema>>;

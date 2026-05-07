@@ -12,19 +12,18 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n/provider";
 
 export function ThemeToggle() {
+  const t = useT();
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
-  // The mount flag exists to gate the very first render so the icon
-  // matches the resolved theme — no value depends on the new state, so
-  // the canonical "set state in effect" warning doesn't apply here.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
   if (!mounted) {
-    return <Button variant="ghost" size="icon" aria-label="Toggle theme" disabled />;
+    return <Button variant="ghost" size="icon" aria-label={t("theme.toggle")} disabled />;
   }
 
   const isDark = (theme === "system" ? resolvedTheme : theme) === "dark";
@@ -33,7 +32,7 @@ export function ThemeToggle() {
     <Button
       variant="ghost"
       size="icon"
-      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      aria-label={isDark ? t("theme.switch_to_light") : t("theme.switch_to_dark")}
       onClick={() => setTheme(isDark ? "light" : "dark")}
     >
       {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
