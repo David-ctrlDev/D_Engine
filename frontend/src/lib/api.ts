@@ -94,6 +94,47 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return payload as T;
 }
 
+/**
+ * Multipart POST. Used by file uploads — the browser sets the
+ * `multipart/form-data` boundary itself, so we deliberately do *not*
+ * pass a Content-Type header. Auth cookies travel via
+ * `credentials: "include"` like the JSON helpers above.
+ */
+async function requestMultipart<T>(path: string, formData: FormData): Promise<T> {
+  const url = `${API_BASE}${path}`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+  } catch (cause) {
+    throw new ApiError(0, "Network error. Check your connection and try again.", { cause });
+  }
+
+  let payload: unknown = null;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+  }
+
+  if (!response.ok) {
+    const detail = (payload as { detail?: unknown } | null)?.detail;
+    const message =
+      typeof detail === "string"
+        ? detail
+        : `Request failed with status ${response.status}.`;
+    throw new ApiError(response.status, message, detail);
+  }
+
+  return payload as T;
+}
+
 export const api = {
   get: <T>(path: string, options?: Omit<RequestOptions, "method" | "body">) =>
     request<T>(path, { ...options, method: "GET" }),
@@ -105,4 +146,5 @@ export const api = {
     request<T>(path, { ...options, method: "PATCH", body }),
   delete: <T>(path: string, options?: Omit<RequestOptions, "method" | "body">) =>
     request<T>(path, { ...options, method: "DELETE" }),
+  postMultipart: <T>(path: string, formData: FormData) => requestMultipart<T>(path, formData),
 };

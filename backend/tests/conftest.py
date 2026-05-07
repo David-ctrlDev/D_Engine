@@ -26,10 +26,12 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
+import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from app.config import settings
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -91,6 +93,16 @@ async def admin_engine() -> AsyncIterator[AsyncEngine]:
         yield engine
     finally:
         await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter() -> None:
+    """slowapi keeps an in-process counter keyed by client IP. Tests all
+    run from 127.0.0.1, so without this fixture the per-IP buckets fill
+    up across the suite and ``/register`` (limit 10/hour) starts
+    rejecting valid calls. Resetting before each test keeps the fixture
+    interaction explicit."""
+    limiter.reset()
 
 
 @pytest_asyncio.fixture(loop_scope="session")

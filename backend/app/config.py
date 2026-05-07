@@ -103,6 +103,17 @@ class Settings(BaseSettings):
     rate_limit_backend: RateLimitBackend = RateLimitBackend.memory
     redis_url: str = "redis://localhost:6379/0"
 
+    # ----- Local file storage -----
+    # Where uploaded files (csv/parquet/xlsx) live. Per-tenant subtree, owned
+    # by the OS user the app runs as. We deliberately store files under a
+    # per-tenant directory so a path traversal bug can't escape the
+    # workspace it was uploaded from. S3 / Azure Blob is a future swap-in
+    # behind the same ``LocalFileStorage`` interface.
+    file_storage_root: str = "./var/uploads"
+    # Hard cap on a single upload. 500 MiB is generous for a CSV/parquet/xlsx
+    # while still preventing DoS via /dev/zero-style payloads.
+    file_upload_max_bytes: int = 500 * 1024 * 1024
+
     @property
     def is_production(self) -> bool:
         return self.app_env is AppEnv.production

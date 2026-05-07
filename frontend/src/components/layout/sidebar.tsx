@@ -5,7 +5,7 @@
  * Highlights the active route. Hidden on small screens.
  */
 
-import { Cog, LayoutDashboard, Shield } from "lucide-react";
+import { Cog, Database, LayoutDashboard, Shield } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS: { href: string; labelKey: DictionaryKey; icon: typeof LayoutDashboard }[] = [
   { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { href: "/datasets", labelKey: "nav.datasets", icon: Database },
   { href: "/settings/security", labelKey: "nav.security", icon: Shield },
 ];
 
