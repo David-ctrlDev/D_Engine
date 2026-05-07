@@ -88,7 +88,7 @@ export function AuthHero() {
             </span>
             <span className="text-zinc-100">{t("hero.headline_c")}</span>
           </h1>
-          <p className="max-w-md text-[13px] leading-relaxed text-zinc-400">{t("hero.subtitle")}</p>
+          <p className="max-w-md text-sm leading-relaxed text-zinc-400">{t("hero.subtitle")}</p>
         </div>
 
         {/* Bento next — supporting evidence for the headline claim. */}
@@ -101,8 +101,8 @@ export function AuthHero() {
               <div className="mb-2 inline-flex size-7 items-center justify-center rounded bg-white/5 ring-1 ring-white/10">
                 <Icon className="size-3.5" />
               </div>
-              <p className="text-[13px] font-medium leading-tight">{t(titleKey)}</p>
-              <p className="mt-1 text-[11px] leading-snug text-zinc-400">{t(bodyKey)}</p>
+              <p className="text-sm font-medium leading-tight">{t(titleKey)}</p>
+              <p className="mt-1 text-xs leading-snug text-zinc-400">{t(bodyKey)}</p>
             </div>
           ))}
         </div>
@@ -119,7 +119,7 @@ export function AuthHero() {
         />
       </div>
 
-      <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+      <div className="flex items-center gap-2 text-xs text-zinc-400">
         <Sparkles className="size-3" />
         {t("brand.version_note")}
       </div>
@@ -235,9 +235,9 @@ function PipelineNode({
       />
       <text
         x={x + width / 2}
-        y={33}
+        y={32}
         textAnchor="middle"
-        fontSize="11"
+        fontSize="9"
         fontWeight="600"
         fill={highlight ? "#0c0a09" : "#e4e4e7"}
       >
@@ -245,9 +245,9 @@ function PipelineNode({
       </text>
       <text
         x={x + width / 2}
-        y={47}
+        y={45}
         textAnchor="middle"
-        fontSize="9"
+        fontSize="7"
         fill={highlight ? "#1c1917" : "#a1a1aa"}
         fontFamily="ui-monospace, Menlo, monospace"
       >
