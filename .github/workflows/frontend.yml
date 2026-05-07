@@ -11,13 +11,55 @@ on:
       - "frontend/**"
       - ".github/workflows/frontend.yml"
 
-# Skeleton pipeline. Real lint/typecheck/test/build steps are wired in
-# layer 12 once frontend code exists. Kept here so CI is green from
-# the first commit.
+defaults:
+  run:
+    working-directory: frontend
+
 jobs:
-  scaffold:
+  test:
+    name: lint + typecheck + tests + build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # The Next build doesn't talk to the backend at compile time, but
+    # NEXT_PUBLIC_API_URL is baked in — set it to a placeholder so the
+    # produced bundle doesn't end up with the literal string "undefined".
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+
     steps:
       - uses: actions/checkout@v4
-      - name: Pipeline scaffolded
-        run: echo "frontend pipeline will be wired in layer 12"
+
+      # pnpm BEFORE setup-node so the Node action knows where pnpm lives
+      # for its built-in cache. Pinning major version 10 keeps lockfile
+      # compatibility stable across CI runs.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Set up Node 22 (with pnpm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies (pnpm, frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (ESLint)
+        run: pnpm lint
+
+      - name: Format check (Prettier)
+        run: pnpm format:check
+
+      - name: Type check (tsc)
+        run: pnpm typecheck
+
+      - name: Tests (vitest)
+        run: pnpm test
+
+      - name: Build (Next.js production build)
+        run: pnpm build

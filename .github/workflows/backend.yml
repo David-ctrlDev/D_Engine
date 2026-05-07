@@ -11,12 +11,86 @@ on:
       - "backend/**"
       - ".github/workflows/backend.yml"
 
-# Skeleton pipeline. Real lint/typecheck/test steps are wired in layer 12
-# once backend code exists. Kept here so CI is green from the first commit.
+defaults:
+  run:
+    working-directory: backend
+
 jobs:
-  scaffold:
+  test:
+    name: lint + typecheck + tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Postgres 16 is brought up as a service container alongside the runner.
+    # GitHub exposes it on localhost:5432 and the health check waits for
+    # ``pg_isready`` before later steps execute.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dataprep
+          POSTGRES_PASSWORD: dataprep_dev
+          POSTGRES_DB: dataprep
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dataprep -d dataprep"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Test-only env. JWT_SECRET / FERNET_KEY are dummy values that satisfy
+    # the Settings minimums; nothing in CI talks to a real outside service.
+    env:
+      DATABASE_URL: postgresql+asyncpg://dataprep_app:dataprep_app_dev@localhost:5432/dataprep
+      DATABASE_ADMIN_URL: postgresql+asyncpg://dataprep:dataprep_dev@localhost:5432/dataprep
+      TEST_DATABASE_URL: postgresql+asyncpg://dataprep_app:dataprep_app_dev@localhost:5432/dataprep_test
+      TEST_DATABASE_ADMIN_URL: postgresql+asyncpg://dataprep:dataprep_dev@localhost:5432/dataprep_test
+      JWT_SECRET: ci-test-jwt-secret-not-real-padded-to-at-least-64-chars-1234567890
+      FERNET_KEY: BvGgdj9PrMTpBfo3fXLEQXRRCiSvZjTCT4ZZS5dEqIw=
+      FRONTEND_URL: http://localhost:3000
+      APP_ENV: test
+      CORS_ORIGINS: http://localhost:3000
+
     steps:
       - uses: actions/checkout@v4
-      - name: Pipeline scaffolded
-        run: echo "backend pipeline will be wired in layer 12"
+
+      # uv handles Python version + virtualenv + dependency cache. The
+      # ``cache-dependency-glob`` keys the cache on the lockfile so cache
+      # hits are deterministic across runs.
+      - name: Set up uv (with cache)
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Install Python 3.14
+        run: uv python install 3.14
+
+      - name: Install dependencies (uv sync, frozen)
+        run: uv sync --frozen
+
+      # Replicates the docker-compose init script: creates the
+      # non-superuser ``dataprep_app`` role used by the app at runtime.
+      # Without this, RLS policies would be bypassed in tests.
+      - name: Initialise dataprep_app role
+        run: psql -h localhost -U dataprep -d dataprep -f scripts/init-app-role.sql
+        env:
+          PGPASSWORD: dataprep_dev
+
+      - name: Create test database
+        run: psql -h localhost -U dataprep -d postgres -c "CREATE DATABASE dataprep_test"
+        env:
+          PGPASSWORD: dataprep_dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Format check (ruff)
+        run: uv run ruff format --check .
+
+      - name: Type check (mypy, strict globally)
+        run: uv run mypy app tests
+
+      - name: Tests (pytest)
+        run: uv run pytest -v
