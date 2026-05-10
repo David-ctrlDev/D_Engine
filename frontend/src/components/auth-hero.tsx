@@ -1,33 +1,52 @@
 "use client";
 
 /**
- * Marketing-side panel rendered next to the auth forms on desktop.
+ * Editorial-warm auth hero.
  *
- * Composition (back to front):
- *   1. Drifting radial blobs (sky / indigo / fuchsia)
- *   2. Static dot-grid texture
- *   3. SVG pipeline visualization with flowing data tokens
- *   4. Headline + bento feature cards
+ * Direction: warm near-black (no cool zinc) + a single saffron accent +
+ * a serif display headline. No drifting blobs, no animated SVG, no
+ * bento grid — the previous take leaned too "generic SaaS dark".
  *
- * All motion respects ``prefers-reduced-motion``. All copy is i18n-aware
- * via the LocaleProvider — switching locale here updates instantly.
+ * Layout, top to bottom:
+ *   1. Brand mark + status ribbon
+ *   2. A small "issue / volume" line (mock magazine masthead)
+ *   3. Editorial headline — sans-italic-serif mix, large
+ *   4. Pull quote / subtitle
+ *   5. A static, hand-drawn-ish data flow strip (raw rows → clean table)
+ *   6. Three numbered footnotes
+ *   7. Footer
+ *
+ * Every accent is the same saffron — restraint is the point. The logo
+ * keeps its own (sky / lavender / fuchsia) palette as a deliberate
+ * counterpoint to the warm background.
  */
 
-import { Boxes, Brain, Database, Sparkles, Wand2 } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 import { BrandLogo } from "@/components/brand-logo";
 import type { DictionaryKey } from "@/lib/i18n/dictionaries";
 import { useT } from "@/lib/i18n/provider";
 
-const FEATURES: { icon: typeof Database; titleKey: DictionaryKey; bodyKey: DictionaryKey }[] = [
+// Saffron, used everywhere an accent is needed. Defined once so a
+// future re-skin only edits this constant.
+const ACCENT = "#f5a524";
+
+const FOOTNOTES: { numKey: DictionaryKey; titleKey: DictionaryKey; bodyKey: DictionaryKey }[] = [
   {
-    icon: Database,
-    titleKey: "hero.feature.any_source.title",
-    bodyKey: "hero.feature.any_source.body",
+    numKey: "hero.note.one.num",
+    titleKey: "hero.note.one.title",
+    bodyKey: "hero.note.one.body",
   },
-  { icon: Wand2, titleKey: "hero.feature.profiled.title", bodyKey: "hero.feature.profiled.body" },
-  { icon: Boxes, titleKey: "hero.feature.versioned.title", bodyKey: "hero.feature.versioned.body" },
-  { icon: Brain, titleKey: "hero.feature.ml_llm.title", bodyKey: "hero.feature.ml_llm.body" },
+  {
+    numKey: "hero.note.two.num",
+    titleKey: "hero.note.two.title",
+    bodyKey: "hero.note.two.body",
+  },
+  {
+    numKey: "hero.note.three.num",
+    titleKey: "hero.note.three.title",
+    bodyKey: "hero.note.three.body",
+  },
 ];
 
 export function AuthHero() {
@@ -36,112 +55,127 @@ export function AuthHero() {
   return (
     <section
       aria-hidden="true"
-      className="relative hidden h-screen overflow-hidden bg-zinc-950 text-zinc-100 lg:flex lg:flex-col lg:justify-between lg:gap-3 lg:p-6 xl:gap-6 xl:p-10 [@media(max-height:760px)]:lg:gap-2 [@media(max-height:760px)]:lg:p-4"
+      // The warm near-black `#0d0a08` reads less synthetic than zinc-950
+      // in side-by-side tests; the noise filter sells it as "paper, not
+      // pixels" without needing a real texture image.
+      className="relative hidden h-screen overflow-hidden text-stone-100 lg:flex lg:flex-col lg:justify-between lg:gap-4 lg:p-8 xl:gap-6 xl:p-10 [@media(max-height:760px)]:lg:gap-3 [@media(max-height:760px)]:lg:p-6"
+      style={{ backgroundColor: "#0d0a08" }}
     >
-      {/* ── Layer 1: drifting blobs ──────────────────────────────── */}
+      {/* Background — a single off-centre warm wash, plus a hairline
+          rule at the right edge. Static. No motion. */}
       <div className="absolute inset-0 -z-10">
         <div
-          className="blob-a absolute -left-32 -top-32 h-[28rem] w-[28rem] rounded-full opacity-50 blur-3xl"
+          className="absolute -left-1/4 top-1/3 size-[42rem] rounded-full opacity-[0.18] blur-3xl"
           style={{
-            background: "radial-gradient(circle at 30% 30%, oklch(0.62 0.24 264), transparent 65%)",
+            background: `radial-gradient(circle at center, ${ACCENT}, transparent 60%)`,
           }}
         />
-        <div
-          className="blob-b absolute -right-32 top-1/3 h-[26rem] w-[26rem] rounded-full opacity-40 blur-3xl"
-          style={{
-            background: "radial-gradient(circle at 50% 50%, oklch(0.72 0.2 200), transparent 60%)",
-          }}
-        />
-        <div
-          className="blob-c absolute -bottom-32 left-1/3 h-[24rem] w-[24rem] rounded-full opacity-30 blur-3xl"
-          style={{
-            background: "radial-gradient(circle at 50% 50%, oklch(0.68 0.22 320), transparent 65%)",
-          }}
-        />
-        {/* Layer 2: dot grid */}
-        <div
-          className="absolute inset-0 opacity-[0.06]"
-          style={{
-            backgroundImage: "radial-gradient(currentColor 1px, transparent 1px)",
-            backgroundSize: "22px 22px",
-          }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-zinc-950/60" />
+        {/* Subtle film-grain via SVG turbulence — adds organic texture
+            without a binary asset. Opacity is held very low (~0.04). */}
+        <svg
+          className="absolute inset-0 h-full w-full opacity-[0.045] mix-blend-overlay"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <filter id="hero-grain">
+            <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch" />
+            <feColorMatrix values="0 0 0 0 1   0 0 0 0 1   0 0 0 0 1   0 0 0 0.6 0" />
+          </filter>
+          <rect width="100%" height="100%" filter="url(#hero-grain)" />
+        </svg>
+        {/* Right-edge rule, kissing the form column. */}
+        <div className="absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-stone-100/10 to-transparent" />
       </div>
 
-      <div className="flex items-center justify-between">
+      {/* Top — masthead row */}
+      <header className="flex items-center justify-between">
         <BrandMark />
-        <StatusPill label={t("hero.status_pill")} />
-      </div>
+        <Masthead label={t("hero.masthead")} />
+      </header>
 
-      {/* Middle block — headline DOMINANT, then supporting evidence.
-       *
-       * Sizing strategy: every piece (h1, subtitle, bento padding,
-       * pipeline) shrinks at ``max-height:760px`` so notebooks
-       * (1366×768 ≈ 600-680px usable after browser chrome) still
-       * fit headline + bento + pipeline together with no scroll
-       * and no clipping. The pipeline visual is the user's
-       * favourite element — keep it visible across all heights. */}
-      <div className="space-y-4 [@media(max-height:760px)]:space-y-2">
-        <div className="space-y-2.5 [@media(max-height:760px)]:space-y-1.5">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-400 [@media(max-height:760px)]:text-[10px]">
-            {t("hero.eyebrow")}
-          </p>
-          <h1 className="text-[1.75rem] font-semibold leading-[1.05] tracking-tight lg:text-[2rem] xl:text-[2.75rem] [@media(max-height:760px)]:lg:text-[1.4rem]">
-            {t("hero.headline_a")}
-            <br />
-            <span className="bg-gradient-to-r from-sky-300 via-indigo-300 to-fuchsia-300 bg-clip-text text-transparent">
-              {t("hero.headline_b")}
-            </span>
-            <span className="text-zinc-100">{t("hero.headline_c")}</span>
-          </h1>
-          <p className="max-w-md text-sm leading-relaxed text-zinc-400 [@media(max-height:760px)]:text-[12px] [@media(max-height:760px)]:leading-snug">
-            {t("hero.subtitle")}
-          </p>
-        </div>
+      {/* Middle — editorial display */}
+      <div className="space-y-6 [@media(max-height:760px)]:space-y-4">
+        <p
+          className="text-[10px] uppercase tracking-[0.32em] text-stone-400"
+          style={{ fontFamily: "var(--font-fraunces), Georgia, serif" }}
+        >
+          {t("hero.eyebrow")}
+        </p>
 
-        {/* Bento next — supporting evidence for the headline claim. */}
-        <div className="grid grid-cols-2 gap-2.5 [@media(max-height:760px)]:gap-1.5">
-          {FEATURES.map(({ icon: Icon, titleKey, bodyKey }) => (
-            <div
-              key={titleKey}
-              className="group rounded-lg border border-white/5 bg-white/[0.02] px-3.5 py-3 transition-colors duration-200 hover:border-white/10 hover:bg-white/[0.04] [@media(max-height:760px)]:px-2.5 [@media(max-height:760px)]:py-2"
+        {/*
+         * Headline. Two lines, the second is italic Fraunces — that
+         * tiny shift of voice from the first line carries most of
+         * the editorial weight. The accent word gets a saffron
+         * underline drawn with a CSS pseudo so we don't need an SVG.
+         */}
+        <h1
+          className="font-serif text-[2.25rem] font-medium leading-[1.04] tracking-[-0.01em] text-stone-100 xl:text-[3.25rem] [@media(max-height:760px)]:lg:text-[1.85rem]"
+          style={{ fontFamily: "var(--font-fraunces), Georgia, serif" }}
+        >
+          {t("hero.headline_a")}
+          <br />
+          <span className="font-normal italic text-stone-300">
+            {t("hero.headline_b")}{" "}
+            <span
+              className="relative whitespace-nowrap"
+              style={{ color: ACCENT }}
             >
-              <div className="mb-2 inline-flex size-7 items-center justify-center rounded bg-white/5 ring-1 ring-white/10 [@media(max-height:760px)]:mb-1 [@media(max-height:760px)]:size-5">
-                <Icon className="size-3.5 [@media(max-height:760px)]:size-3" />
-              </div>
-              <p className="text-sm font-medium leading-tight [@media(max-height:760px)]:text-[12px]">
-                {t(titleKey)}
-              </p>
-              <p className="mt-1 text-xs leading-snug text-zinc-400 [@media(max-height:760px)]:mt-0.5 [@media(max-height:760px)]:text-[11px]">
-                {t(bodyKey)}
-              </p>
-            </div>
-          ))}
-        </div>
+              {t("hero.headline_c")}
+              {/* hand-drawn underline — slight pen-skip */}
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 200 12"
+                className="pointer-events-none absolute -bottom-1 left-0 h-2 w-full"
+                preserveAspectRatio="none"
+              >
+                <path
+                  d="M2 7 C 50 2, 100 11, 198 5"
+                  stroke={ACCENT}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  fill="none"
+                  opacity="0.85"
+                />
+              </svg>
+            </span>
+          </span>
+        </h1>
 
-        {/* Pipeline last — "and here's how it flows together".
-         * Compact-mode props at small heights drop the inner
-         * padding and the SVG row from 70px viewBox down to ~52px,
-         * which together save ~30px of column height. */}
-        <Pipeline
-          sampleRunLabel={t("hero.sample_run")}
-          stages={[
-            { label: t("hero.node.source"), sub: "postgres" },
-            { label: t("hero.node.profile"), sub: "rules" },
-            { label: t("hero.node.train"), sub: "model" },
-            { label: t("hero.node.serve"), sub: "agents", highlight: true },
-          ]}
+        {/* Subtitle — set in sans, narrow column, neutral. */}
+        <p className="max-w-md text-[15px] leading-relaxed text-stone-400 [@media(max-height:760px)]:text-[13px]">
+          {t("hero.subtitle")}
+        </p>
+
+        {/* Static "before / after" strip — raw CSV bytes on the left,
+            tidied table on the right, with a soft saffron arrow. No
+            animation; the contrast carries the meaning. */}
+        <FlowStrip
+          beforeLabel={t("hero.flow.before")}
+          afterLabel={t("hero.flow.after")}
         />
       </div>
 
-      <div className="flex items-center gap-2 text-xs text-zinc-400">
-        <Sparkles className="size-3" />
-        {t("brand.version_note")}
+      {/* Bottom — three numbered footnotes laid out like a book's spine */}
+      <div className="grid grid-cols-3 gap-5 border-t border-stone-100/[0.06] pt-5 [@media(max-height:760px)]:gap-3 [@media(max-height:760px)]:pt-3">
+        {FOOTNOTES.map(({ numKey, titleKey, bodyKey }) => (
+          <div key={numKey} className="space-y-1.5">
+            <div
+              className="text-[11px] tracking-widest"
+              style={{ color: ACCENT, fontFamily: "var(--font-fraunces), Georgia, serif" }}
+            >
+              {t(numKey)}
+            </div>
+            <div className="text-[13px] font-medium leading-tight text-stone-200 [@media(max-height:760px)]:text-[12px]">
+              {t(titleKey)}
+            </div>
+            <p className="text-[11px] leading-snug text-stone-500">{t(bodyKey)}</p>
+          </div>
+        ))}
       </div>
     </section>
   );
 }
+
+/* ─── Pieces ────────────────────────────────────────────────────────── */
 
 function BrandMark() {
   return (
@@ -152,142 +186,90 @@ function BrandMark() {
   );
 }
 
-function StatusPill({ label }: { label: string }) {
+function Masthead({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-zinc-300">
-      <span className="relative flex size-2">
-        <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/70" />
-        <span className="relative size-2 rounded-full bg-emerald-400" />
-      </span>
+    <div
+      className="flex items-center gap-2 text-[10px] uppercase tracking-[0.28em] text-stone-400"
+      style={{ fontFamily: "var(--font-fraunces), Georgia, serif" }}
+    >
+      <span className="h-px w-4" style={{ backgroundColor: ACCENT }} />
       {label}
     </div>
   );
 }
 
-/* ─── Pipeline ───────────────────────────────────────────────────────────
- * Source → Profile → Train → Serve, with data tokens flowing along each
- * connector. The last stage (``Serve``) is highlighted because that's
- * where the product story lands: serving ML models and LLM agents.
- * The viewBox is wide and short so the panel doesn't grow tall. */
-
-interface Stage {
-  label: string;
-  sub: string;
-  highlight?: boolean;
-}
-
-function Pipeline({
-  sampleRunLabel,
-  stages,
-}: {
-  sampleRunLabel: string;
-  stages: [Stage, Stage, Stage, Stage];
-}) {
-  // Horizontal positions for 4 evenly-spaced 50-px-wide nodes.
-  const nodeW = 50;
-  const xs = [10, 110, 210, 310];
-
+/**
+ * Hand-set "before / after" strip:
+ *
+ *   ┌─────────────────┐    →    ┌─────────────────┐
+ *   │ raw,ish,csv     │         │ Customers       │
+ *   │ "1,Jane,,US"    │         │ ────────────    │
+ *   │ "2,??,42,??"    │         │ id  name age... │
+ *   └─────────────────┘         └─────────────────┘
+ *
+ * The arrow between is the sole instance of saffron on this surface
+ * besides the headline accent and the masthead rule.
+ */
+function FlowStrip({ beforeLabel, afterLabel }: { beforeLabel: string; afterLabel: string }) {
   return (
-    <div className="rounded-xl border border-white/5 bg-gradient-to-b from-white/[0.04] to-transparent px-4 py-3 [@media(max-height:760px)]:px-3 [@media(max-height:760px)]:py-2">
-      <div className="mb-2 flex items-center gap-2 text-[9px] uppercase tracking-widest text-zinc-500 [@media(max-height:760px)]:mb-1">
-        <span className="size-1 rounded-full bg-zinc-500" />
-        {sampleRunLabel}
+    <div className="flex items-stretch gap-3 [@media(max-height:760px)]:gap-2">
+      {/* BEFORE — raw bytes */}
+      <div className="flex min-w-0 flex-1 flex-col gap-2 rounded-md border border-stone-100/[0.06] bg-stone-100/[0.015] p-3 [@media(max-height:760px)]:p-2.5">
+        <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.22em] text-stone-500">
+          <span className="size-1 rounded-full bg-stone-500" />
+          {beforeLabel}
+        </div>
+        <pre className="overflow-hidden text-[10px] leading-[1.5] text-stone-400 [@media(max-height:760px)]:text-[9px]">
+          <code>{`id,name,age,country
+1,Jane,,US
+2,?,42,??
+3,Lee,29,SG
+4,, ,US`}</code>
+        </pre>
       </div>
-      <svg
-        viewBox="0 0 380 70"
-        className="w-full [@media(max-height:760px)]:max-h-[58px]"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        preserveAspectRatio="xMidYMid meet"
-      >
-        {stages.map((stage, i) => (
-          <PipelineNode key={i} x={xs[i]} width={nodeW} {...stage} />
-        ))}
-        {/* 3 connectors between the 4 nodes */}
-        {[0, 1, 2].map((i) => {
-          const x1 = xs[i] + nodeW;
-          const x2 = xs[i + 1];
-          const path = `M ${x1} 35 C ${(x1 + x2) / 2} 35, ${(x1 + x2) / 2} 35, ${x2} 35`;
-          return (
-            <g key={`pipe-${i}`}>
-              <path d={path} stroke="oklch(0.55 0.05 264)" strokeOpacity="0.4" strokeWidth="1.5" />
-              {[0, 1.6, 3.2].map((delay) => (
-                <circle key={`t-${i}-${delay}`} r="2.5" fill={i === 2 ? "#F0ABFC" : "#A5B4FC"}>
-                  <animateMotion
-                    dur="4.5s"
-                    repeatCount="indefinite"
-                    begin={`${delay}s`}
-                    path={path}
-                  />
-                </circle>
-              ))}
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
 
-function PipelineNode({
-  x,
-  width,
-  label,
-  sub,
-  highlight = false,
-}: {
-  x: number;
-  width: number;
-  label: string;
-  sub: string;
-  highlight?: boolean;
-}) {
-  const id = `pipeNode-${x}`;
-  return (
-    <g>
-      <rect
-        x={x}
-        y={15}
-        width={width}
-        height={40}
-        rx={8}
-        fill={highlight ? `url(#${id})` : "oklch(0.22 0.005 264)"}
-        stroke={highlight ? "oklch(0.7 0.18 264)" : "oklch(0.32 0.01 264)"}
-        strokeWidth={1}
-      />
-      <text
-        x={x + width / 2}
-        y={32}
-        textAnchor="middle"
-        fontSize="9"
-        fontWeight="600"
-        fill={highlight ? "#0c0a09" : "#e4e4e7"}
-      >
-        {label}
-      </text>
-      <text
-        x={x + width / 2}
-        y={45}
-        textAnchor="middle"
-        fontSize="7"
-        fill={highlight ? "#1c1917" : "#a1a1aa"}
-        fontFamily="ui-monospace, Menlo, monospace"
-      >
-        {sub}
-      </text>
-      <defs>
-        <linearGradient
-          id={id}
-          x1={x}
-          y1={15}
-          x2={x + width}
-          y2={55}
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor="#A5B4FC" />
-          <stop offset="1" stopColor="#F0ABFC" />
-        </linearGradient>
-      </defs>
-    </g>
+      {/* Arrow — single saffron tick */}
+      <div className="flex shrink-0 items-center" aria-hidden="true">
+        <ArrowRight className="size-4" style={{ color: ACCENT }} strokeWidth={2.5} />
+      </div>
+
+      {/* AFTER — tidied table */}
+      <div className="flex min-w-0 flex-1 flex-col gap-2 rounded-md border border-stone-100/[0.08] bg-stone-100/[0.025] p-3 [@media(max-height:760px)]:p-2.5">
+        <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.22em] text-stone-400">
+          <span className="size-1 rounded-full" style={{ backgroundColor: ACCENT }} />
+          {afterLabel}
+        </div>
+        <table className="w-full text-[10px] leading-[1.5] text-stone-200 [@media(max-height:760px)]:text-[9px]">
+          <thead className="text-stone-500">
+            <tr className="border-b border-stone-100/10">
+              <th className="text-left font-medium">id</th>
+              <th className="text-left font-medium">name</th>
+              <th className="text-left font-medium">age</th>
+              <th className="text-left font-medium">country</th>
+            </tr>
+          </thead>
+          <tbody className="font-mono">
+            <tr>
+              <td>1</td>
+              <td>Jane</td>
+              <td className="text-stone-500">—</td>
+              <td>US</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td className="text-stone-500">—</td>
+              <td>42</td>
+              <td className="text-stone-500">—</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>Lee</td>
+              <td>29</td>
+              <td>SG</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
