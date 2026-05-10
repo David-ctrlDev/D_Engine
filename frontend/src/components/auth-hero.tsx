@@ -36,7 +36,7 @@ export function AuthHero() {
   return (
     <section
       aria-hidden="true"
-      className="relative hidden h-screen overflow-hidden bg-zinc-950 text-zinc-100 lg:flex lg:flex-col lg:justify-between lg:gap-3 lg:p-6 xl:gap-6 xl:p-10 [@media(max-height:760px)]:lg:gap-2 [@media(max-height:760px)]:lg:p-5"
+      className="relative hidden h-screen overflow-hidden bg-zinc-950 text-zinc-100 lg:flex lg:flex-col lg:justify-between lg:gap-3 lg:p-6 xl:gap-6 xl:p-10 [@media(max-height:760px)]:lg:gap-2 [@media(max-height:760px)]:lg:p-4"
     >
       {/* ── Layer 1: drifting blobs ──────────────────────────────── */}
       <div className="absolute inset-0 -z-10">
@@ -75,17 +75,19 @@ export function AuthHero() {
       </div>
 
       {/* Middle block — headline DOMINANT, then supporting evidence.
-       * Spacing tightens at small viewport heights so notebooks
-       * (≤ 760px) still fit headline + bento + pipeline without
-       * clipping. The pipeline itself is hidden below 720px because
-       * the SVG is the easiest piece to drop without sacrificing
-       * the value proposition. */}
-      <div className="space-y-4 [@media(max-height:760px)]:space-y-3">
-        <div className="space-y-2.5 [@media(max-height:760px)]:space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-400">
+       *
+       * Sizing strategy: every piece (h1, subtitle, bento padding,
+       * pipeline) shrinks at ``max-height:760px`` so notebooks
+       * (1366×768 ≈ 600-680px usable after browser chrome) still
+       * fit headline + bento + pipeline together with no scroll
+       * and no clipping. The pipeline visual is the user's
+       * favourite element — keep it visible across all heights. */}
+      <div className="space-y-4 [@media(max-height:760px)]:space-y-2">
+        <div className="space-y-2.5 [@media(max-height:760px)]:space-y-1.5">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-400 [@media(max-height:760px)]:text-[10px]">
             {t("hero.eyebrow")}
           </p>
-          <h1 className="text-[1.75rem] font-semibold leading-[1.05] tracking-tight lg:text-[2rem] xl:text-[2.75rem] [@media(max-height:760px)]:lg:text-[1.6rem]">
+          <h1 className="text-[1.75rem] font-semibold leading-[1.05] tracking-tight lg:text-[2rem] xl:text-[2.75rem] [@media(max-height:760px)]:lg:text-[1.4rem]">
             {t("hero.headline_a")}
             <br />
             <span className="bg-gradient-to-r from-sky-300 via-indigo-300 to-fuchsia-300 bg-clip-text text-transparent">
@@ -93,42 +95,44 @@ export function AuthHero() {
             </span>
             <span className="text-zinc-100">{t("hero.headline_c")}</span>
           </h1>
-          <p className="max-w-md text-sm leading-relaxed text-zinc-400 [@media(max-height:760px)]:text-[13px]">
+          <p className="max-w-md text-sm leading-relaxed text-zinc-400 [@media(max-height:760px)]:text-[12px] [@media(max-height:760px)]:leading-snug">
             {t("hero.subtitle")}
           </p>
         </div>
 
         {/* Bento next — supporting evidence for the headline claim. */}
-        <div className="grid grid-cols-2 gap-2.5 [@media(max-height:760px)]:gap-2">
+        <div className="grid grid-cols-2 gap-2.5 [@media(max-height:760px)]:gap-1.5">
           {FEATURES.map(({ icon: Icon, titleKey, bodyKey }) => (
             <div
               key={titleKey}
-              className="group rounded-lg border border-white/5 bg-white/[0.02] px-3.5 py-3 transition-colors duration-200 hover:border-white/10 hover:bg-white/[0.04] [@media(max-height:760px)]:px-3 [@media(max-height:760px)]:py-2.5"
+              className="group rounded-lg border border-white/5 bg-white/[0.02] px-3.5 py-3 transition-colors duration-200 hover:border-white/10 hover:bg-white/[0.04] [@media(max-height:760px)]:px-2.5 [@media(max-height:760px)]:py-2"
             >
-              <div className="mb-2 inline-flex size-7 items-center justify-center rounded bg-white/5 ring-1 ring-white/10 [@media(max-height:760px)]:mb-1.5 [@media(max-height:760px)]:size-6">
-                <Icon className="size-3.5" />
+              <div className="mb-2 inline-flex size-7 items-center justify-center rounded bg-white/5 ring-1 ring-white/10 [@media(max-height:760px)]:mb-1 [@media(max-height:760px)]:size-5">
+                <Icon className="size-3.5 [@media(max-height:760px)]:size-3" />
               </div>
-              <p className="text-sm font-medium leading-tight">{t(titleKey)}</p>
-              <p className="mt-1 text-xs leading-snug text-zinc-400">{t(bodyKey)}</p>
+              <p className="text-sm font-medium leading-tight [@media(max-height:760px)]:text-[12px]">
+                {t(titleKey)}
+              </p>
+              <p className="mt-1 text-xs leading-snug text-zinc-400 [@media(max-height:760px)]:mt-0.5 [@media(max-height:760px)]:text-[11px]">
+                {t(bodyKey)}
+              </p>
             </div>
           ))}
         </div>
 
-        {/* Pipeline last — "and here's how it flows together". Hidden
-         * on short viewports (notebooks, ≤ 720px) because the SVG +
-         * label row is the most droppable piece; the bento above
-         * already carries the message. */}
-        <div className="[@media(max-height:720px)]:hidden">
-          <Pipeline
-            sampleRunLabel={t("hero.sample_run")}
-            stages={[
-              { label: t("hero.node.source"), sub: "postgres" },
-              { label: t("hero.node.profile"), sub: "rules" },
-              { label: t("hero.node.train"), sub: "model" },
-              { label: t("hero.node.serve"), sub: "agents", highlight: true },
-            ]}
-          />
-        </div>
+        {/* Pipeline last — "and here's how it flows together".
+         * Compact-mode props at small heights drop the inner
+         * padding and the SVG row from 70px viewBox down to ~52px,
+         * which together save ~30px of column height. */}
+        <Pipeline
+          sampleRunLabel={t("hero.sample_run")}
+          stages={[
+            { label: t("hero.node.source"), sub: "postgres" },
+            { label: t("hero.node.profile"), sub: "rules" },
+            { label: t("hero.node.train"), sub: "model" },
+            { label: t("hero.node.serve"), sub: "agents", highlight: true },
+          ]}
+        />
       </div>
 
       <div className="flex items-center gap-2 text-xs text-zinc-400">
@@ -184,12 +188,18 @@ function Pipeline({
   const xs = [10, 110, 210, 310];
 
   return (
-    <div className="rounded-xl border border-white/5 bg-gradient-to-b from-white/[0.04] to-transparent px-4 py-3">
-      <div className="mb-2 flex items-center gap-2 text-[9px] uppercase tracking-widest text-zinc-500">
+    <div className="rounded-xl border border-white/5 bg-gradient-to-b from-white/[0.04] to-transparent px-4 py-3 [@media(max-height:760px)]:px-3 [@media(max-height:760px)]:py-2">
+      <div className="mb-2 flex items-center gap-2 text-[9px] uppercase tracking-widest text-zinc-500 [@media(max-height:760px)]:mb-1">
         <span className="size-1 rounded-full bg-zinc-500" />
         {sampleRunLabel}
       </div>
-      <svg viewBox="0 0 380 70" className="w-full" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <svg
+        viewBox="0 0 380 70"
+        className="w-full [@media(max-height:760px)]:max-h-[58px]"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        preserveAspectRatio="xMidYMid meet"
+      >
         {stages.map((stage, i) => (
           <PipelineNode key={i} x={xs[i]} width={nodeW} {...stage} />
         ))}
