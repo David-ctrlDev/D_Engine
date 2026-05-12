@@ -12,7 +12,7 @@ import { ArrowLeft, FileText, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-import { ConversationsSection } from "@/components/agent/conversations-section";
+import { AgentNextStep } from "@/components/agent/agent-next-step";
 import { ProfileSection } from "@/components/datasets/profile-section";
 import { ShareSection } from "@/components/datasets/share-section";
 import { Badge } from "@/components/ui/badge";
@@ -124,8 +124,8 @@ export default function DatasetDetailPage() {
       {/* Profile (slice E) */}
       <ProfileSection datasetId={data.id} />
 
-      {/* Agent conversations (slice G2.1) */}
-      <ConversationsSection datasetId={data.id} />
+      {/* Agent kickoff (slice G2.1 — agent-led) */}
+      <AgentNextStep datasetId={data.id} />
 
       {/* Sharing (slice F) */}
       {me.data && (

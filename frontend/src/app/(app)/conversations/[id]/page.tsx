@@ -198,9 +198,29 @@ export default function ConversationPage() {
           </Card>
         ) : (
           <>
-            {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
-            ))}
+            {messages.map((m, idx) => {
+              // Suggestion chips only render on the *latest* assistant
+              // message and only while we're not currently sending —
+              // older chips stay in the transcript visually but become
+              // inert, because the user has already moved on.
+              const isLatestAssistant =
+                idx === messages.length - 1 &&
+                m.role === "assistant" &&
+                pendingUser === null &&
+                !sendMut.isPending;
+              return (
+                <MessageBubble
+                  key={m.id}
+                  message={m}
+                  showSuggestions={isLatestAssistant}
+                  onPickSuggestion={(text) => {
+                    setInput(text);
+                    sendMut.mutate(text);
+                  }}
+                  disabled={sendMut.isPending}
+                />
+              );
+            })}
             {pendingUser !== null && (
               <MessageBubble
                 message={{
@@ -208,6 +228,7 @@ export default function ConversationPage() {
                   conversation_id: conversation.id,
                   role: "user",
                   content: pendingUser,
+                  suggestions: null,
                   token_usage: null,
                   created_at: new Date().toISOString(),
                 }}
@@ -255,11 +276,27 @@ export default function ConversationPage() {
   );
 }
 
-function MessageBubble({ message }: { message: MessagePublic }) {
+function MessageBubble({
+  message,
+  showSuggestions = false,
+  onPickSuggestion,
+  disabled = false,
+}: {
+  message: MessagePublic;
+  showSuggestions?: boolean;
+  onPickSuggestion?: (text: string) => void;
+  disabled?: boolean;
+}) {
   const t = useT();
   const isUser = message.role === "user";
+  const chips = message.suggestions ?? [];
   return (
-    <div className={cn("flex gap-3", isUser ? "justify-end" : "justify-start")}>
+    <div
+      className={cn(
+        "flex flex-col gap-2",
+        isUser ? "items-end" : "items-start",
+      )}
+    >
       <div
         className={cn(
           "max-w-[80%] space-y-1 rounded-lg px-3 py-2 text-sm",
@@ -278,6 +315,30 @@ function MessageBubble({ message }: { message: MessagePublic }) {
           </div>
         )}
       </div>
+      {/*
+        Intent-capture chips — buttons under the agent's bubble.
+        Only on the latest assistant turn so users can't pick stale
+        options from earlier in the transcript.
+      */}
+      {showSuggestions && chips.length > 0 && (
+        <div className="flex max-w-[80%] flex-wrap gap-2">
+          {chips.map((chip, i) => (
+            <button
+              key={i}
+              type="button"
+              disabled={disabled}
+              onClick={() => onPickSuggestion?.(chip)}
+              className={cn(
+                "border-input bg-background hover:border-primary/60 hover:bg-primary/5",
+                "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

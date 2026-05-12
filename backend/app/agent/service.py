@@ -16,6 +16,8 @@ turn. Without that context the agent has nothing useful to say —
 
 from __future__ import annotations
 
+import json
+import re
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -57,24 +59,67 @@ class CredentialNotUsableError(AgentError):
 # ---------------------------------------------------------------------------
 
 
-# The agent gets a *very* short briefing. The dataset schema and the
-# latest profile are the high-signal context; everything else (the
-# user's locale, the workspace conventions) we'll layer in later.
+# The agent gets a short briefing — schema + latest profile + a
+# tight set of rules about how to talk. The audience is *not* technical
+# (Head of Data, ops, business analysts); the system prompt enforces a
+# plain-language tone and the suggestion-chip protocol the UI relies on.
 _SYSTEM_TEMPLATE = """\
-Eres un analista de datos senior trabajando dentro de la plataforma dataprep.
-El usuario está conversando contigo sobre el dataset **{dataset_name}**.
-Origen del dataset: {source_kind} — {source_name}.
+Eres el asistente de dataprep, una plataforma para preparar datos sin código.
+Hablas con personas que NO son técnicas (jefes de área, analistas de negocio, gente de operaciones).
+NO uses jerga técnica sin explicar. Usa lenguaje natural, frases cortas, bullets cuando enumeres.
 
-Esquema del dataset (las columnas que existen):
+Dataset actual: **{dataset_name}**.
+Origen: {source_kind} — "{source_name}".
+
+Esquema (columnas que existen en este dataset):
 {schema}
 
 {profile_section}
 
-Reglas:
-- Responde en el mismo idioma que use el usuario (español o inglés).
-- Sé concreto y accionable. Cita columnas por su nombre.
-- No inventes datos que no aparezcan arriba. Si te falta información, pídela.
-- Si el usuario pide ejecutar algo (limpiar nulos, deduplicar, etc.), describe paso a paso lo que harías sin todavía ejecutarlo — la ejecución llega en próximas versiones.
+CÓMO RESPONDER
+
+- Idioma: el mismo que use el usuario (español por defecto).
+- Sé breve. Frases cortas. Bullets cuando enumeres.
+- Cita columnas entre comillas: "categoría", "email".
+- No inventes datos que no veas en el esquema o el análisis.
+- No ejecutes acciones todavía. Por ahora SOLO conversas y propones.
+  Si el usuario pide limpiar/deduplicar/normalizar, descríbelo paso a paso y di que próximamente podrás ejecutarlo.
+
+OFRECER OPCIONES CLARAS (botones)
+
+Cuando tenga sentido ofrecer al usuario opciones cerradas (intenciones, sí/no, etc.),
+**termina tu mensaje** con UNA SOLA línea con este formato exacto, sin nada más después:
+
+SUGGESTIONS:["Opción 1", "Opción 2", "Otra cosa…"]
+
+Reglas para las opciones:
+- 2 a 4 opciones.
+- Cada opción: máximo ~7 palabras, en el idioma del usuario.
+- Si una opción significa "ninguna de las anteriores", úsala como "Otra cosa…".
+- NO incluyas la línea SUGGESTIONS cuando estés simplemente respondiendo una pregunta abierta —
+  úsala solo cuando ofrezcas opciones discretas.
+
+CUANDO INICIES LA CONVERSACIÓN (primer mensaje, sin que el usuario haya dicho nada)
+
+1. Saluda brevemente: "Hola, soy tu asistente."
+2. Resume el dataset en UNA frase: nombre del dataset, número de columnas, número de filas (si conoces row_count del análisis).
+3. Si hubo análisis, lista en 2-4 bullets los problemas más relevantes que viste.
+   Si NO hubo análisis aún, dilo y sugiérele ejecutarlo.
+4. Pregunta qué quiere hacer con esos datos. Ofrece estas cuatro opciones (en este orden):
+
+SUGGESTIONS:["Entrenar un modelo de IA con esto", "Usarlos en un chatbot", "Solo explorar y entender", "Otra cosa…"]
+
+SIGUIENTES TURNOS
+
+Según lo que el usuario elija, sigue guiándolo:
+
+- "Entrenar un modelo de IA con esto" → pregunta qué quiere predecir (qué columna sería el objetivo)
+  y qué tipo de modelo le sirve. Luego propón un plan de preparación de datos para entrenamiento.
+- "Usarlos en un chatbot" → pregunta cómo va a usar el chatbot (atención al cliente, búsqueda en docs, etc.)
+  y qué columna lleva el texto principal. Luego propón un plan para formatear los datos como contexto.
+- "Solo explorar y entender" → propón una exploración guiada: empieza por las columnas con problemas,
+  resume distribuciones, pregunta sobre qué columna quiere profundizar.
+- "Otra cosa…" → pídele al usuario que describa con sus palabras qué necesita.
 """
 
 
@@ -94,6 +139,37 @@ def _format_schema(columns: list[dict[str, Any]]) -> str:
         nullable = c.get("nullable", True)
         lines.append(f"- {name} ({dtype}{'/ nullable' if nullable else ''})")
     return "\n".join(lines)
+
+
+_SUGGESTIONS_PATTERN = re.compile(r"SUGGESTIONS:\s*(\[[^\n]*\])\s*$", re.DOTALL)
+
+
+def _parse_suggestions(text: str) -> tuple[str, list[str] | None]:
+    """Pull a trailing ``SUGGESTIONS:[...]`` line out of an assistant turn.
+
+    The LLM is instructed to emit chip options on a final, single line
+    in a specific format (see :data:`_SYSTEM_TEMPLATE`). We strip that
+    line from the user-visible text, JSON-parse the array, and return
+    the cleaned text + the chips. If anything looks off we tolerate it
+    by returning the original text and ``None`` — the chat still works,
+    you just don't get buttons that turn.
+    """
+    m = _SUGGESTIONS_PATTERN.search(text)
+    if m is None:
+        return text.rstrip(), None
+    try:
+        parsed = json.loads(m.group(1))
+    except ValueError:
+        # JSONDecodeError is a subclass of ValueError; catching the
+        # parent covers both. If the LLM forgot a quote or emitted
+        # plain text, we silently degrade to "no chips".
+        return text.rstrip(), None
+    if not isinstance(parsed, list) or not all(isinstance(x, str) for x in parsed):
+        return text.rstrip(), None
+    if not parsed:
+        return text.rstrip(), None
+    cleaned = text[: m.start()].rstrip()
+    return cleaned, parsed
 
 
 def _format_profile(profile: ProfileRun | None) -> str:
@@ -348,10 +424,12 @@ async def send_message(
         await session.rollback()
         raise
 
+    cleaned_text, suggestions = _parse_suggestions(completion.text)
     assistant_msg = AgentMessage(
         conversation_id=conversation_id,
         role=AgentMessageRole.assistant,
-        content=completion.text or "(respuesta vacía del modelo)",
+        content=cleaned_text or "(respuesta vacía del modelo)",
+        suggestions=suggestions,
         token_usage=completion.token_usage,
     )
     session.add(assistant_msg)
@@ -365,6 +443,81 @@ async def send_message(
         await session.flush()
 
     return user_msg, assistant_msg
+
+
+# ---------------------------------------------------------------------------
+# Kickoff — the agent's *opening* turn
+# ---------------------------------------------------------------------------
+
+
+# Sentinel "user" message that nudges the LLM into the kickoff protocol.
+# This message is NEVER persisted — it only lives long enough to elicit
+# the response. The system prompt already tells the model what to do
+# when it sees this trigger.
+_KICKOFF_TRIGGER = (
+    "(Sistema: el usuario acaba de abrir esta conversación. "
+    "Aplica el protocolo de bienvenida descrito arriba: saluda, resume el dataset, "
+    "lista los problemas más relevantes y ofrece las cuatro opciones de intención.)"
+)
+
+
+async def send_kickoff_turn(
+    session: AsyncSession,
+    *,
+    conversation_id: UUID,
+) -> AgentMessage:
+    """Generate the agent's *opening* message — proactive, structured,
+    intent-capture chips. Persists only an assistant turn (no user
+    message: the user hasn't said anything yet)."""
+    convo = await get_conversation(session, conversation_id=conversation_id)
+    row = (
+        await session.execute(
+            select(Dataset, DataSource)
+            .join(DataSource, Dataset.source_id == DataSource.id)
+            .where(Dataset.id == convo.dataset_id)
+        )
+    ).one_or_none()
+    if row is None:
+        raise DatasetNotVisibleError(str(convo.dataset_id))
+    dataset, source = row
+
+    credential = (
+        await session.execute(select(LlmCredential).where(LlmCredential.id == convo.credential_id))
+    ).scalar_one_or_none()
+    if credential is None:
+        raise CredentialNotUsableError(str(convo.credential_id))
+    api_key = encryption.decrypt(credential.api_key_encrypted).decode()
+
+    system_text = await _build_system_prompt(session, dataset=dataset, source=source)
+    messages = [
+        ChatMessage(role="system", content=system_text),
+        ChatMessage(role="user", content=_KICKOFF_TRIGGER),
+    ]
+    completion = await chat_completion(
+        provider=credential.provider,
+        api_key=api_key,
+        base_url=credential.base_url,
+        model=convo.model,
+        messages=messages,
+    )
+    cleaned_text, suggestions = _parse_suggestions(completion.text)
+    msg = AgentMessage(
+        conversation_id=conversation_id,
+        role=AgentMessageRole.assistant,
+        content=cleaned_text or "(respuesta vacía del modelo)",
+        suggestions=suggestions,
+        token_usage=completion.token_usage,
+    )
+    session.add(msg)
+    await session.flush()
+    if convo.title is None:
+        # The kickoff is a summary of the dataset; use its first line as
+        # a usable title until the user picks an intent and we can
+        # derive something better.
+        first_line = next((ln for ln in cleaned_text.splitlines() if ln.strip()), "")
+        convo.title = _derive_title(first_line)
+        await session.flush()
+    return msg
 
 
 def _derive_title(text: str) -> str:
@@ -382,5 +535,6 @@ __all__ = [
     "get_conversation_with_messages",
     "list_conversations_for_dataset",
     "list_usable_credentials",
+    "send_kickoff_turn",
     "send_message",
 ]

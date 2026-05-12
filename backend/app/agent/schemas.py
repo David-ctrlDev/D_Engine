@@ -31,14 +31,17 @@ class ConversationCreateRequest(_StrictModel):
     The user picks which BYOK credential to spend against and which
     model. Both have to be valid for the current tenant — the service
     layer + RLS enforce that.
+
+    ``kickoff`` (default ``True``) tells the backend to immediately
+    generate the agent's *opening turn* — a structured introduction
+    with the dataset summary, the problems detected, and intent-
+    capture chips. The user sees the chat already populated; they
+    don't have to type first.
     """
 
     credential_id: UUID
     model: str = Field(min_length=1, max_length=120)
-    # Optional opening question; if provided we immediately run one
-    # round-trip so the conversation lands with one user + one
-    # assistant message instead of empty.
-    initial_message: str | None = Field(default=None, max_length=8000)
+    kickoff: bool = True
 
 
 class ConversationPublic(BaseModel):
@@ -64,6 +67,11 @@ class MessagePublic(BaseModel):
     conversation_id: UUID
     role: AgentMessageRole
     content: str
+    # ``["Entrenar un modelo", ...]`` — intent-capture chips the agent
+    # attached. Only ever populated on ``assistant`` rows. The
+    # frontend renders them as buttons; clicking one sends the chip
+    # text as the next user message.
+    suggestions: list[str] | None = None
     token_usage: dict[str, int] | None
     created_at: datetime
 

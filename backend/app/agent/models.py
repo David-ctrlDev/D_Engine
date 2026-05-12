@@ -122,6 +122,12 @@ class AgentMessage(Base):
     # tokens" in the UI later. We don't track $ price here; that needs
     # provider-specific rate tables and lives outside this slice.
     token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # Intent-capture chips the agent attached to this turn, e.g.:
+    #   ["Entrenar un modelo", "Solo explorar", "Otra cosa…"]
+    # The UI renders them as buttons under the message. Only ever set
+    # on ``assistant`` rows; the LLM emits them as a trailing
+    # ``SUGGESTIONS:[...]`` line we strip server-side.
+    suggestions: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=_utcnow,

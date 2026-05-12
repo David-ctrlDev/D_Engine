@@ -393,3 +393,130 @@ async def test_send_message_happy_path(
     assert stub_chat_completion["api_key"] == "sk-test-not-real"
     assert user_msg.role == AgentMessageRole.user
     assert assistant_msg.role == AgentMessageRole.assistant
+
+
+# ===========================================================================
+# Kickoff turn + SUGGESTIONS parser
+# ===========================================================================
+
+
+@pytest.fixture
+def stub_chat_completion_with_chips(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Variant of the chat stub that emits a kickoff-style response —
+    text plus a trailing ``SUGGESTIONS:[...]`` line, the format the
+    LLM is supposed to use for intent-capture chips."""
+    captured: dict[str, Any] = {}
+
+    async def fake(
+        *,
+        provider: LlmProviderKind,
+        api_key: str,
+        base_url: str | None,
+        model: str,
+        messages: list[ChatMessage],
+    ) -> ChatCompletion:
+        captured["messages"] = messages
+        text = (
+            "Hola, soy tu asistente.\n\n"
+            'Veo que cargaste "customers" — 2 columnas.\n\n'
+            'Detecté que la columna "email" puede tener nulos.\n\n'
+            "¿Qué te gustaría hacer con estos datos?\n\n"
+            'SUGGESTIONS:["Entrenar un modelo de IA con esto", '
+            '"Usarlos en un chatbot", "Solo explorar y entender", "Otra cosa…"]'
+        )
+        return ChatCompletion(
+            text=text,
+            token_usage={"prompt": 100, "completion": 50, "total": 150},
+        )
+
+    monkeypatch.setattr(agent_service, "chat_completion", fake)
+    return captured
+
+
+async def test_kickoff_turn_produces_assistant_with_chips(
+    session: AsyncSession, stub_chat_completion_with_chips: dict[str, Any]
+) -> None:
+    """The agent-led opening: no user message persisted, single
+    assistant turn with its ``suggestions`` populated from the
+    ``SUGGESTIONS:[...]`` line. The user-visible content has the
+    trailing chip line stripped."""
+    a_tenant, owner_a, _, _, _ = await _seed(session)
+    a_id, owner_a_id = a_tenant.id, owner_a.id
+
+    await set_request_context(session, user_id=owner_a_id, tenant_id=a_id)
+    cred = await _make_credential(session, tenant_id=a_id, creator_id=owner_a_id)
+    src = await _make_source(session, tenant_id=a_id, creator_id=owner_a_id, name="src")
+    ds = await _make_dataset(
+        session, tenant_id=a_id, source_id=src.id, creator_id=owner_a_id, name="customers"
+    )
+    convo = await agent_service.create_conversation(
+        session,
+        tenant_id=a_id,
+        user_id=owner_a_id,
+        dataset_id=ds.id,
+        credential_id=cred.id,
+        model="claude-sonnet-4-5",
+    )
+    await session.commit()
+    await set_request_context(session, user_id=owner_a_id, tenant_id=a_id)
+
+    kickoff = await agent_service.send_kickoff_turn(session, conversation_id=convo.id)
+    await session.commit()
+
+    # The trigger we sent the LLM is *not* persisted — only the
+    # assistant turn exists for the conversation.
+    await set_request_context(session, user_id=owner_a_id, tenant_id=a_id)
+    rows = (
+        (
+            await session.execute(
+                select(AgentMessage)
+                .where(AgentMessage.conversation_id == convo.id)
+                .order_by(AgentMessage.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].role == AgentMessageRole.assistant
+    # The SUGGESTIONS line is stripped from the user-visible content.
+    assert "SUGGESTIONS:" not in rows[0].content
+    assert "soy tu asistente" in rows[0].content
+    # The chips landed in the suggestions column, in order.
+    assert rows[0].suggestions == [
+        "Entrenar un modelo de IA con esto",
+        "Usarlos en un chatbot",
+        "Solo explorar y entender",
+        "Otra cosa…",
+    ]
+    assert kickoff.role == AgentMessageRole.assistant
+
+
+def test_parse_suggestions_handles_messy_inputs() -> None:
+    """The parser tolerates the LLM emitting the line in different
+    shapes, and degrades to (text, None) when the JSON is broken."""
+    from app.agent.service import _parse_suggestions
+
+    # Happy path.
+    cleaned, sug = _parse_suggestions('Hola.\n\nSUGGESTIONS:["A", "B", "C"]')
+    assert cleaned == "Hola."
+    assert sug == ["A", "B", "C"]
+
+    # Trailing whitespace tolerated.
+    cleaned, sug = _parse_suggestions('Hola.\n\nSUGGESTIONS:["A", "B"]\n  \n')
+    assert cleaned == "Hola."
+    assert sug == ["A", "B"]
+
+    # No SUGGESTIONS line at all — text passes through, no chips.
+    cleaned, sug = _parse_suggestions("Solo un párrafo sin opciones.")
+    assert cleaned == "Solo un párrafo sin opciones."
+    assert sug is None
+
+    # Malformed JSON — fall back to original text, no chips.
+    cleaned, sug = _parse_suggestions("Hola.\n\nSUGGESTIONS:[broken]")
+    assert "Hola." in cleaned
+    assert sug is None
+
+    # Empty list — counts as "no chips".
+    cleaned, sug = _parse_suggestions("Hola.\n\nSUGGESTIONS:[]")
+    assert sug is None

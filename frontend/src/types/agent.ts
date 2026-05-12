@@ -26,6 +26,13 @@ export interface MessagePublic {
   conversation_id: string;
   role: AgentMessageRole;
   content: string;
+  /**
+   * Intent-capture chips the agent attached to this turn. The UI
+   * renders them as buttons below the message; clicking one sends
+   * its text as the next user message. Only ever set on
+   * ``assistant`` rows; ``null`` for user/system turns.
+   */
+  suggestions: string[] | null;
   token_usage: { prompt: number; completion: number; total: number } | null;
   created_at: string;
 }
@@ -38,7 +45,13 @@ export interface ConversationDetail {
 export interface ConversationCreateRequest {
   credential_id: string;
   model: string;
-  initial_message?: string | null;
+  /**
+   * When ``true`` (default), the backend immediately runs the agent's
+   * opening turn — the chat lands populated with the diagnosis +
+   * intent chips. Set ``false`` only if you want a blank conversation
+   * for some reason (we don't, currently).
+   */
+  kickoff?: boolean;
 }
 
 export interface SendMessageRequest {

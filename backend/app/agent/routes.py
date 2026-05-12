@@ -109,6 +109,14 @@ async def create_conversation(
     user: CurrentUserDep,
     claims: AccessClaimsDep,
 ) -> ConversationDetail:
+    """Create a new conversation. When ``kickoff`` is true (the default),
+    the agent's opening turn is generated server-side before the
+    response returns — the chat lands on screen already populated
+    with the diagnosis + intent chips.
+
+    Commit semantics: we hold the conversation row + kickoff message
+    in one transaction. If the LLM call fails we rollback so the user
+    never sees an empty conversation that doesn't know how to start."""
     did = _parse_uuid_or_404(dataset_id, "Dataset")
     try:
         convo = await service.create_conversation(
@@ -128,33 +136,31 @@ async def create_conversation(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes acceso a esa conexión de IA.",
         ) from e
-    await session.commit()
-    # If the user supplied an opening message, fire one round-trip
-    # before returning so the response already has a (user, assistant)
-    # pair. This keeps the UI flow simple: one POST creates the chat.
+
     messages: list[MessagePublic] = []
-    if body.initial_message:
+    if body.kickoff:
         try:
-            user_msg, assistant_msg = await service.send_message(
-                session, conversation_id=convo.id, content=body.initial_message
-            )
+            kickoff_msg = await service.send_kickoff_turn(session, conversation_id=convo.id)
         except ProviderError as e:
-            # The conversation still exists (we committed above); the
-            # frontend will just show it empty and the user can try
-            # sending a message again from the chat screen.
+            await session.rollback()
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"El proveedor rechazó la solicitud: {e}",
             ) from e
-        except service.ConversationNotFoundError as e:  # pragma: no cover - just created
+        except service.DatasetNotVisibleError as e:  # pragma: no cover - just verified
+            await session.rollback()
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Conversación no encontrada."
+                status_code=status.HTTP_404_NOT_FOUND, detail="Dataset no encontrado."
             ) from e
-        await session.commit()
-        messages = [
-            MessagePublic.model_validate(user_msg),
-            MessagePublic.model_validate(assistant_msg),
-        ]
+        except service.CredentialNotUsableError as e:  # pragma: no cover - just verified
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes acceso a esa conexión de IA.",
+            ) from e
+        messages = [MessagePublic.model_validate(kickoff_msg)]
+
+    await session.commit()
     return ConversationDetail(
         conversation=ConversationPublic.model_validate(convo), messages=messages
     )

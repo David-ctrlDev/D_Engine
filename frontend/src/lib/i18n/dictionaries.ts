@@ -501,26 +501,24 @@ export const es = {
   "settings.ai.access.all_members": "Todo el equipo",
   "settings.ai.access.specific_members": "Personas específicas",
 
-  // ----- Agent / Chat (slice G2.1) --------------------------------------
-  "agent.cta.button": "Hablar con el agente",
-  "agent.cta.tooltip": "Inicia una conversación con el agente sobre este dataset.",
-  "agent.start.title": "Iniciar conversación con el agente",
-  "agent.start.subtitle":
-    "El agente verá el esquema del dataset y el último análisis para responderte con contexto.",
-  "agent.start.credential_label": "¿Qué conexión de IA quieres usar?",
-  "agent.start.credential_placeholder": "Elige una conexión…",
-  "agent.start.no_credentials.title": "No tienes ninguna conexión disponible",
-  "agent.start.no_credentials.admin":
-    "Registra una en Conexiones de IA para empezar a usar el agente.",
-  "agent.start.no_credentials.member":
-    "Pídele a un administrador del workspace que te dé acceso a una conexión.",
-  "agent.start.no_credentials.cta": "Ir a Conexiones de IA",
-  "agent.start.model_label": "Modelo",
-  "agent.start.initial_message_label": "¿Quieres lanzar una pregunta inicial? (opcional)",
-  "agent.start.initial_message_placeholder":
-    "Ej: ¿Qué columnas tienen problemas de calidad?",
-  "agent.start.submit": "Empezar",
-  "agent.start.submitting": "Conectando…",
+  // ----- Agent / Chat (slice G2.1 — agent-led) --------------------------
+  "agent.next.title": "Tu asistente está listo",
+  "agent.next.body":
+    "El asistente vio tu dataset y el análisis. Cuando pulses Comenzar, te presentará lo que encontró y te ofrecerá opciones claras según lo que quieras hacer con estos datos.",
+  "agent.next.cta": "Comenzar con la IA",
+  "agent.next.starting": "Iniciando…",
+  "agent.next.previous": "Conversaciones anteriores",
+  "agent.no_creds.title": "No tienes ninguna conexión disponible",
+  "agent.no_creds.admin":
+    "Registra una conexión en \"Conexiones de IA\" para empezar a usar el asistente.",
+  "agent.no_creds.member":
+    "Pídele a un administrador del workspace que te dé acceso a una conexión de IA.",
+  "agent.no_creds.cta": "Ir a Conexiones de IA",
+  "agent.picker.title": "Elige una conexión de IA",
+  "agent.picker.subtitle":
+    "Tienes varias conexiones disponibles. ¿Cuál quieres usar para esta conversación?",
+  "agent.picker.label": "Conexión",
+  "agent.picker.submit": "Empezar",
   "agent.chat.title": "Conversación con el agente",
   "agent.chat.subtitle_prefix": "Sobre el dataset",
   "agent.chat.back": "Volver al dataset",
@@ -1010,26 +1008,24 @@ export const en: Record<DictionaryKey, string> = {
   "settings.ai.access.all_members": "Whole team",
   "settings.ai.access.specific_members": "Specific people",
 
-  // ----- Agent / Chat (slice G2.1) --------------------------------------
-  "agent.cta.button": "Talk to the agent",
-  "agent.cta.tooltip": "Start a conversation with the agent about this dataset.",
-  "agent.start.title": "Start a conversation with the agent",
-  "agent.start.subtitle":
-    "The agent will see the dataset schema and the latest profile to answer you in context.",
-  "agent.start.credential_label": "Which AI connection do you want to use?",
-  "agent.start.credential_placeholder": "Pick a connection…",
-  "agent.start.no_credentials.title": "You don't have any available connections",
-  "agent.start.no_credentials.admin":
-    "Register one in AI connections to start using the agent.",
-  "agent.start.no_credentials.member":
-    "Ask a workspace admin to grant you access to a connection.",
-  "agent.start.no_credentials.cta": "Go to AI connections",
-  "agent.start.model_label": "Model",
-  "agent.start.initial_message_label": "Want to ask an opening question? (optional)",
-  "agent.start.initial_message_placeholder":
-    "E.g. Which columns have data-quality issues?",
-  "agent.start.submit": "Start",
-  "agent.start.submitting": "Connecting…",
+  // ----- Agent / Chat (slice G2.1 — agent-led) --------------------------
+  "agent.next.title": "Your assistant is ready",
+  "agent.next.body":
+    "The assistant has looked at your dataset and its analysis. When you click Start, it'll walk you through what it found and offer clear options based on what you want to do with this data.",
+  "agent.next.cta": "Start with the AI",
+  "agent.next.starting": "Starting…",
+  "agent.next.previous": "Previous conversations",
+  "agent.no_creds.title": "You don't have any available connections",
+  "agent.no_creds.admin":
+    "Register a connection in \"AI connections\" to start using the assistant.",
+  "agent.no_creds.member":
+    "Ask a workspace admin to grant you access to an AI connection.",
+  "agent.no_creds.cta": "Go to AI connections",
+  "agent.picker.title": "Pick an AI connection",
+  "agent.picker.subtitle":
+    "You have multiple connections available. Which one should we use for this conversation?",
+  "agent.picker.label": "Connection",
+  "agent.picker.submit": "Start",
   "agent.chat.title": "Conversation with the agent",
   "agent.chat.subtitle_prefix": "About dataset",
   "agent.chat.back": "Back to dataset",
