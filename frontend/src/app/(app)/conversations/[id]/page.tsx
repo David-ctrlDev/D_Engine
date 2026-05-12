@@ -29,6 +29,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { MessageMarkdown } from "@/components/agent/message-markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ApiError } from "@/lib/api";
@@ -299,7 +300,7 @@ function MessageBubble({
     >
       <div
         className={cn(
-          "max-w-[80%] space-y-1 rounded-lg px-3 py-2 text-sm",
+          "max-w-[80%] space-y-1.5 rounded-lg px-3 py-2 text-sm",
           isUser
             ? "bg-primary text-primary-foreground"
             : "bg-muted text-foreground",
@@ -308,7 +309,16 @@ function MessageBubble({
         <div className="text-xs font-medium opacity-70">
           {isUser ? t("agent.chat.you") : t("agent.chat.agent")}
         </div>
-        <div className="whitespace-pre-wrap">{message.content}</div>
+        {/* Agent messages render as markdown (the models reach for **bold**,
+           bullets, code fences by default). User turns stay verbatim — the
+           user typed it, we don't second-guess their characters. */}
+        {isUser ? (
+          <div className="whitespace-pre-wrap">{message.content}</div>
+        ) : (
+          <div className="space-y-1.5">
+            <MessageMarkdown content={message.content} />
+          </div>
+        )}
         {message.token_usage && (
           <div className="text-[10px] opacity-60">
             {t("agent.chat.tokens", { total: message.token_usage.total })}
