@@ -16,6 +16,7 @@ from app.auth import models
 from app.config import settings
 from app.data import models as _data_models
 from app.db.base import Base
+from app.llm import models as _llm_models
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 

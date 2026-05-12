@@ -27,6 +27,7 @@ from app.auth.routes import router as auth_router
 from app.config import settings
 from app.core.rate_limit import limiter
 from app.data.routes import datasets_router, sources_router, workspace_router
+from app.llm.routes import router as llm_router
 from app.logging_config import configure_logging
 from app.middleware.security_headers import SecurityHeadersMiddleware
 
@@ -87,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(sources_router)
     app.include_router(datasets_router)
     app.include_router(workspace_router)
+    app.include_router(llm_router)
     return app
 
 

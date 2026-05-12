@@ -3,26 +3,45 @@
 /**
  * Minimal sidebar — designed to grow as the data-prep features land.
  * Highlights the active route. Hidden on small screens.
+ *
+ * Admin-gated items
+ * -----------------
+ * Some entries (currently "AI connections") only make sense for workspace
+ * owners/admins. We read the tenant role from ``useCurrentUser`` — the
+ * same call the layout already makes — and hide the link for plain
+ * members. The backend RLS gate is the actual boundary; this just keeps
+ * the UI tidy.
  */
 
-import { Cog, Database, LayoutDashboard, Shield } from "lucide-react";
+import { Cog, Database, LayoutDashboard, Shield, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { BrandLogo } from "@/components/brand-logo";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import type { DictionaryKey } from "@/lib/i18n/dictionaries";
 import { useT } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS: { href: string; labelKey: DictionaryKey; icon: typeof LayoutDashboard }[] = [
+interface NavItem {
+  href: string;
+  labelKey: DictionaryKey;
+  icon: typeof LayoutDashboard;
+  adminOnly?: boolean;
+}
+
+const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
   { href: "/datasets", labelKey: "nav.datasets", icon: Database },
+  { href: "/settings/ai", labelKey: "nav.ai_connections", icon: Sparkles, adminOnly: true },
   { href: "/settings/security", labelKey: "nav.security", icon: Shield },
 ];
 
 export function Sidebar() {
   const t = useT();
   const pathname = usePathname();
+  const { data } = useCurrentUser();
+  const isAdmin = data?.tenant.role === "owner" || data?.tenant.role === "admin";
   return (
     <aside className="bg-background hidden w-56 shrink-0 flex-col border-r md:flex">
       <div className="flex h-14 items-center gap-2 border-b px-4">
@@ -30,7 +49,8 @@ export function Sidebar() {
         <span className="text-base font-semibold tracking-tight">{t("brand.name")}</span>
       </div>
       <nav className="flex flex-1 flex-col gap-1 p-3">
-        {NAV_ITEMS.map(({ href, labelKey, icon: Icon }) => {
+        {NAV_ITEMS.map(({ href, labelKey, icon: Icon, adminOnly }) => {
+          if (adminOnly && !isAdmin) return null;
           const active = pathname === href || pathname.startsWith(`${href}/`);
           return (
             <Link

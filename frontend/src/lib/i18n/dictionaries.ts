@@ -381,6 +381,125 @@ export const es = {
   "settings.sessions.revoke": "Revocar",
   "settings.sessions.revoked": "Sesión revocada.",
   "settings.sessions.revoke_failed": "No se pudo revocar.",
+
+  // ----- Settings / Conexiones de IA (BYOK, slice G1) -------------------
+  "nav.ai_connections": "Conexiones de IA",
+  "settings.ai.title": "Conexiones de IA",
+  "settings.ai.subtitle":
+    "Registra las claves de tus proveedores de inteligencia artificial (OpenAI, Anthropic, Google, Ollama). Decide quién en tu equipo puede usar cada una.",
+  "settings.ai.who_can_register":
+    "Solo los administradores del workspace pueden registrar y compartir conexiones. Los miembros sólo verán las que tú compartas con ellos.",
+  "settings.ai.not_admin.title": "No tienes permisos para esta sección",
+  "settings.ai.not_admin.body":
+    "Solo los administradores del workspace pueden gestionar las conexiones con proveedores de IA. Si necesitas usar el agente, pide a un admin que te dé acceso a una conexión.",
+
+  "settings.ai.list.empty.title": "Aún no has registrado ninguna conexión",
+  "settings.ai.list.empty.body":
+    "Conecta un proveedor para que el agente pueda generar análisis y propuestas. Nosotros nunca vemos tu clave — se cifra antes de guardarse.",
+  "settings.ai.list.empty.cta": "Nueva conexión",
+  "settings.ai.list.new": "Nueva conexión",
+  "settings.ai.list.col.nickname": "Nombre",
+  "settings.ai.list.col.provider": "Proveedor",
+  "settings.ai.list.col.model": "Modelo por defecto",
+  "settings.ai.list.col.access": "Acceso",
+  "settings.ai.list.col.last_test": "Último test",
+  "settings.ai.list.col.actions": "",
+  "settings.ai.list.never_tested": "Nunca probada",
+  "settings.ai.list.test_ok": "Funciona",
+  "settings.ai.list.test_error": "Falló",
+  "settings.ai.list.load_failed": "No se pudieron cargar las conexiones.",
+
+  // Field labels + helper text used both in the new-credential modal
+  // and the edit modal.
+  "settings.ai.field.nickname": "Nombre interno",
+  "settings.ai.field.nickname_hint":
+    "Cómo verás esta conexión en la lista (ej: \"OpenAI producción\").",
+  "settings.ai.field.nickname_placeholder": "Ej: OpenAI producción",
+  "settings.ai.field.provider": "Proveedor",
+  "settings.ai.field.api_key": "Clave de API",
+  "settings.ai.field.api_key_hint":
+    "Se cifra antes de guardarse. Una vez guardada no se vuelve a mostrar — sólo se puede reemplazar por una nueva.",
+  "settings.ai.field.api_key_placeholder": "Pega aquí tu clave",
+  "settings.ai.field.api_key_rotate_placeholder":
+    "Pega una nueva clave para rotar (déjala vacía para mantener la actual)",
+  "settings.ai.field.api_key_docs": "¿Dónde la obtengo?",
+  "settings.ai.field.model": "Modelo por defecto",
+  "settings.ai.field.model_hint":
+    "El modelo que el agente usará cuando elija esta conexión. Podrás cambiarlo por conversación más adelante.",
+  "settings.ai.field.model_live": "Lista actualizada del proveedor",
+  "settings.ai.field.model_hint_live":
+    "Estos son los modelos a los que tu clave tiene acceso ahora mismo, según el proveedor.",
+  "settings.ai.field.base_url": "URL del servidor",
+  "settings.ai.field.base_url_hint":
+    "Dirección donde está corriendo tu Ollama (ej: http://localhost:11434).",
+  "settings.ai.field.base_url_placeholder": "http://localhost:11434",
+  "settings.ai.field.access": "¿Quién en tu equipo puede usar esta conexión?",
+  "settings.ai.field.access_admins_only": "Solo administradores",
+  "settings.ai.field.access_admins_only_hint":
+    "Únicamente owners y admins del workspace verán esta conexión.",
+  "settings.ai.field.access_all_members": "Todos los miembros del workspace",
+  "settings.ai.field.access_all_members_hint":
+    "Cualquier persona del workspace podrá usarla al iniciar un chat.",
+  "settings.ai.field.access_specific_members": "Personas específicas",
+  "settings.ai.field.access_specific_members_hint":
+    "Tú eliges quién puede usarla. Configura los miembros después de guardar.",
+
+  // New-credential modal
+  "settings.ai.new.title": "Nueva conexión de IA",
+  "settings.ai.new.subtitle":
+    "Elige un proveedor, pega la clave y decide quién puede usarla.",
+  "settings.ai.new.choose_provider": "Elige un proveedor",
+  "settings.ai.new.test_before_save": "Probar antes de guardar",
+  "settings.ai.new.testing": "Probando…",
+  "settings.ai.new.test_ok": "Conexión válida.",
+  "settings.ai.new.test_failed": "La prueba falló: {error}",
+  "settings.ai.new.submit": "Guardar conexión",
+  "settings.ai.new.submitting": "Guardando…",
+  "settings.ai.new.toast_success": "Conexión guardada.",
+  "settings.ai.new.test_required":
+    "Prueba la conexión antes de guardar para confirmar que la clave funciona.",
+  "settings.ai.new.api_key_required": "Pega tu clave de API.",
+  "settings.ai.new.base_url_required":
+    "Indica la URL de tu servidor de Ollama.",
+  "settings.ai.new.nickname_required": "Ponle un nombre a esta conexión.",
+
+  // Edit modal
+  "settings.ai.edit.title": "Editar conexión",
+  "settings.ai.edit.subtitle":
+    "Actualiza el nombre, el modelo por defecto o rota la clave. Para cambiar el proveedor, crea una nueva conexión.",
+  "settings.ai.edit.submit": "Guardar cambios",
+  "settings.ai.edit.submitting": "Guardando…",
+  "settings.ai.edit.toast_success": "Conexión actualizada.",
+
+  // Row actions
+  "settings.ai.row.edit": "Editar",
+  "settings.ai.row.test": "Probar",
+  "settings.ai.row.testing": "Probando…",
+  "settings.ai.row.test_ok": "Conexión válida.",
+  "settings.ai.row.test_failed": "La prueba falló: {error}",
+  "settings.ai.row.delete": "Eliminar",
+  "settings.ai.row.share": "Gestionar acceso",
+  "settings.ai.row.toast_deleted": "Conexión eliminada.",
+  "settings.ai.row.confirm_delete":
+    "¿Eliminar esta conexión? Los miembros que la estaban usando perderán acceso.",
+
+  // Grants (specific_members) modal
+  "settings.ai.grants.title": "Quién puede usar esta conexión",
+  "settings.ai.grants.subtitle":
+    "Sólo las personas que añadas aquí podrán elegirla al iniciar un chat.",
+  "settings.ai.grants.add_placeholder": "Añadir un miembro…",
+  "settings.ai.grants.empty": "Aún no le has dado acceso a nadie.",
+  "settings.ai.grants.remove": "Quitar",
+  "settings.ai.grants.granted": "Acceso concedido.",
+  "settings.ai.grants.revoked": "Acceso revocado.",
+  "settings.ai.grants.load_failed": "No se pudieron cargar los miembros.",
+  "settings.ai.grants.no_more_members":
+    "Todos los miembros del workspace ya tienen acceso.",
+
+  // Member-access labels reused in the list table
+  "settings.ai.access.admins_only": "Solo admins",
+  "settings.ai.access.all_members": "Todo el equipo",
+  "settings.ai.access.specific_members": "Personas específicas",
 } as const;
 
 export type DictionaryKey = keyof typeof es;
@@ -733,6 +852,118 @@ export const en: Record<DictionaryKey, string> = {
   "settings.sessions.revoke": "Revoke",
   "settings.sessions.revoked": "Session revoked.",
   "settings.sessions.revoke_failed": "Failed to revoke.",
+
+  // ----- Settings / AI connections (BYOK, slice G1) ---------------------
+  "nav.ai_connections": "AI connections",
+  "settings.ai.title": "AI connections",
+  "settings.ai.subtitle":
+    "Register the keys for your AI providers (OpenAI, Anthropic, Google, Ollama). Decide who on your team can use each one.",
+  "settings.ai.who_can_register":
+    "Only workspace admins can register and share connections. Members only see the ones you share with them.",
+  "settings.ai.not_admin.title": "You don't have access to this section",
+  "settings.ai.not_admin.body":
+    "Only workspace admins can manage AI provider connections. If you need to use the agent, ask an admin to grant you access to a connection.",
+
+  "settings.ai.list.empty.title": "You haven't registered any connections yet",
+  "settings.ai.list.empty.body":
+    "Connect a provider so the agent can generate analyses and proposals. We never see your key — it's encrypted before being stored.",
+  "settings.ai.list.empty.cta": "New connection",
+  "settings.ai.list.new": "New connection",
+  "settings.ai.list.col.nickname": "Name",
+  "settings.ai.list.col.provider": "Provider",
+  "settings.ai.list.col.model": "Default model",
+  "settings.ai.list.col.access": "Access",
+  "settings.ai.list.col.last_test": "Last test",
+  "settings.ai.list.col.actions": "",
+  "settings.ai.list.never_tested": "Never tested",
+  "settings.ai.list.test_ok": "Working",
+  "settings.ai.list.test_error": "Failed",
+  "settings.ai.list.load_failed": "Couldn't load connections.",
+
+  "settings.ai.field.nickname": "Internal name",
+  "settings.ai.field.nickname_hint":
+    "How you'll see this connection in the list (e.g. \"OpenAI production\").",
+  "settings.ai.field.nickname_placeholder": "E.g. OpenAI production",
+  "settings.ai.field.provider": "Provider",
+  "settings.ai.field.api_key": "API key",
+  "settings.ai.field.api_key_hint":
+    "Encrypted before storage. Once saved it's never shown again — only replaceable by a new one.",
+  "settings.ai.field.api_key_placeholder": "Paste your key here",
+  "settings.ai.field.api_key_rotate_placeholder":
+    "Paste a new key to rotate (leave empty to keep the current one)",
+  "settings.ai.field.api_key_docs": "Where do I get it?",
+  "settings.ai.field.model": "Default model",
+  "settings.ai.field.model_hint":
+    "The model the agent will use when this connection is selected. You'll be able to override it per conversation later.",
+  "settings.ai.field.model_live": "Live list from provider",
+  "settings.ai.field.model_hint_live":
+    "These are the models your key actually has access to right now, straight from the provider.",
+  "settings.ai.field.base_url": "Server URL",
+  "settings.ai.field.base_url_hint":
+    "The address where your Ollama is running (e.g. http://localhost:11434).",
+  "settings.ai.field.base_url_placeholder": "http://localhost:11434",
+  "settings.ai.field.access": "Who on your team can use this connection?",
+  "settings.ai.field.access_admins_only": "Admins only",
+  "settings.ai.field.access_admins_only_hint":
+    "Only workspace owners and admins will see this connection.",
+  "settings.ai.field.access_all_members": "All workspace members",
+  "settings.ai.field.access_all_members_hint":
+    "Anyone in the workspace can use it when starting a chat.",
+  "settings.ai.field.access_specific_members": "Specific people",
+  "settings.ai.field.access_specific_members_hint":
+    "You choose who can use it. Configure members after saving.",
+
+  "settings.ai.new.title": "New AI connection",
+  "settings.ai.new.subtitle":
+    "Pick a provider, paste the key, decide who can use it.",
+  "settings.ai.new.choose_provider": "Choose a provider",
+  "settings.ai.new.test_before_save": "Test before saving",
+  "settings.ai.new.testing": "Testing…",
+  "settings.ai.new.test_ok": "Connection is valid.",
+  "settings.ai.new.test_failed": "Test failed: {error}",
+  "settings.ai.new.submit": "Save connection",
+  "settings.ai.new.submitting": "Saving…",
+  "settings.ai.new.toast_success": "Connection saved.",
+  "settings.ai.new.test_required":
+    "Test the connection before saving to confirm the key works.",
+  "settings.ai.new.api_key_required": "Paste your API key.",
+  "settings.ai.new.base_url_required":
+    "Provide the URL of your Ollama server.",
+  "settings.ai.new.nickname_required": "Give this connection a name.",
+
+  "settings.ai.edit.title": "Edit connection",
+  "settings.ai.edit.subtitle":
+    "Update the name, default model, or rotate the key. To change provider, create a new connection.",
+  "settings.ai.edit.submit": "Save changes",
+  "settings.ai.edit.submitting": "Saving…",
+  "settings.ai.edit.toast_success": "Connection updated.",
+
+  "settings.ai.row.edit": "Edit",
+  "settings.ai.row.test": "Test",
+  "settings.ai.row.testing": "Testing…",
+  "settings.ai.row.test_ok": "Connection is valid.",
+  "settings.ai.row.test_failed": "Test failed: {error}",
+  "settings.ai.row.delete": "Delete",
+  "settings.ai.row.share": "Manage access",
+  "settings.ai.row.toast_deleted": "Connection deleted.",
+  "settings.ai.row.confirm_delete":
+    "Delete this connection? Members who were using it will lose access.",
+
+  "settings.ai.grants.title": "Who can use this connection",
+  "settings.ai.grants.subtitle":
+    "Only the people you add here will be able to pick it when starting a chat.",
+  "settings.ai.grants.add_placeholder": "Add a member…",
+  "settings.ai.grants.empty": "You haven't granted access to anyone yet.",
+  "settings.ai.grants.remove": "Remove",
+  "settings.ai.grants.granted": "Access granted.",
+  "settings.ai.grants.revoked": "Access revoked.",
+  "settings.ai.grants.load_failed": "Couldn't load members.",
+  "settings.ai.grants.no_more_members":
+    "Every workspace member already has access.",
+
+  "settings.ai.access.admins_only": "Admins only",
+  "settings.ai.access.all_members": "Whole team",
+  "settings.ai.access.specific_members": "Specific people",
 };
 
 export const dictionaries = { es, en } as const;

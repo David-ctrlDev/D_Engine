@@ -59,6 +59,7 @@ pnpm-debug.log*
 
 # --- Local data / docker volumes ---
 .docker-data/
+backend/var/
 
 # --- uv ---
 .uv-cache/
