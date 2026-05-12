@@ -53,6 +53,7 @@ from app.data.probes import postgres as pg_probe
 from app.data.probes.mssql import mssql as mssql_probe
 from app.data.probes.mssql import mssql_azure as mssql_azure_probe
 from app.data.storage import LocalFileStorage, StoredFile
+from app.db.rls import set_request_context
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -417,6 +418,8 @@ async def run_profile(
     for huge DB tables we already cap at the sample size in
     :mod:`app.data.profiling`.
     """
+    from sqlalchemy import update as sa_update
+
     from app.data.profiling import profile_db_dataset, profile_file_dataset
 
     stmt = (
@@ -429,12 +432,25 @@ async def run_profile(
     if row is None:
         raise DatasetNotFoundError(str(dataset_id))
     dataset, source = row
+    # Snapshot what we need from the ORM rows, then detach them. The long
+    # profile work runs entirely on plain Python objects — keeping the
+    # ORM-managed instances around through it would leave them dirty-tracked
+    # (via the JSONB locator or attribute autoflush), and the *next* commit
+    # would then try to UPDATE ``datasets``. That UPDATE rides on a fresh
+    # transaction whose GUCs may not match the policy, raising StaleDataError
+    # on a 0-row match. Snapshot + expunge sidesteps the whole problem and
+    # the explicit UPDATE below stays under our control.
+    source_kind = source.kind
+    locator: dict[str, Any] = dict(dataset.locator or {})
+    connection_config_encrypted = source.connection_config_encrypted
+    session.expunge(dataset)
+    session.expunge(source)
 
     # Insert the row in ``running`` state so the user can poll if we
     # ever move this off the request thread.
     profile_run = ProfileRun(
         tenant_id=tenant_id,
-        dataset_id=dataset.id,
+        dataset_id=dataset_id,
         created_by=user_id,
         status=ProfileRunStatus.running,
     )
@@ -443,22 +459,25 @@ async def run_profile(
     # The profile run row is committed up-front so a crash mid-run
     # leaves a visible ``running`` row instead of nothing.
     await session.commit()
+    # RLS GUCs are scoped to the transaction we just closed
+    # (set_config's is_local=true). Every fresh transaction needs the
+    # context re-bound or the policies block the next write.
+    await set_request_context(session, user_id=user_id, tenant_id=tenant_id)
 
     try:
-        if source.kind in (
+        if source_kind in (
             DataSourceKind.csv,
             DataSourceKind.parquet,
             DataSourceKind.xlsx,
         ):
             result_payload = await profile_file_dataset(
-                kind=source.kind,
-                locator=dataset.locator or {},
+                kind=source_kind,
+                locator=locator,
                 abs_resolver=storage.absolute_path,
             )
         else:
-            config = _decrypt_db_config(source.connection_config_encrypted)
-            probe = _probe_for(source.kind)
-            locator = dataset.locator or {}
+            config = _decrypt_db_config(connection_config_encrypted)
+            probe = _probe_for(source_kind)
             schema = str(locator.get("schema", ""))
             table = str(locator.get("table", ""))
             result_payload = await profile_db_dataset(
@@ -472,16 +491,32 @@ async def run_profile(
         profile_run.error = str(e)[:1000]
         profile_run.completed_at = datetime.now(UTC)
         await session.commit()
+        await set_request_context(session, user_id=user_id, tenant_id=tenant_id)
         return profile_run
 
     profile_run.status = ProfileRunStatus.completed
     profile_run.result = result_payload
     profile_run.completed_at = datetime.now(UTC)
+    await session.commit()
+    await set_request_context(session, user_id=user_id, tenant_id=tenant_id)
+
     # Stamp the row count back on the dataset so the list view shows it.
+    # We do this via an explicit UPDATE (not ORM dirty-tracking) so that:
+    #   * a 0-row match — e.g. the dataset got deleted while we profiled
+    #     it, or RLS hides it from us — doesn't crash the handler with
+    #     StaleDataError, and
+    #   * SQLAlchemy doesn't try to UPDATE anything else it thinks it
+    #     might know about on a re-attached ORM instance.
     rc = result_payload.get("row_count")
     if isinstance(rc, int) and rc >= 0:
-        dataset.row_count_estimate = rc
-    await session.commit()
+        await session.execute(
+            sa_update(Dataset)
+            .where(Dataset.id == dataset_id)
+            .values(row_count_estimate=rc)
+            .execution_options(synchronize_session=False)
+        )
+        await session.commit()
+        await set_request_context(session, user_id=user_id, tenant_id=tenant_id)
     return profile_run
 
 
