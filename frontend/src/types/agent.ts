@@ -71,6 +71,50 @@ export type Visualization =
       tool_call_id: string;
       tool_name: string;
       args: Record<string, unknown>;
+    }
+  | {
+      kind: "fillna_summary";
+      total_filled: number;
+      filled: Array<{
+        column: string;
+        strategy: string;
+        value: string;
+        filled_count: number;
+      }>;
+    }
+  | {
+      kind: "normalize_text_summary";
+      applied: Array<{
+        column: string;
+        case: string;
+        strip: boolean;
+        collapse_spaces: boolean;
+        remove_accents: boolean;
+        distinct_before: number;
+        distinct_after: number;
+        collapsed_variants: number;
+      }>;
+    }
+  | {
+      kind: "parse_dates_summary";
+      results: Array<{
+        column: string;
+        matched_format: string | null;
+        parsed_count: number;
+        failed_count: number;
+        skipped: boolean;
+      }>;
+    }
+  | {
+      kind: "normalize_numeric_summary";
+      results: Array<{
+        column: string;
+        decimal?: string;
+        converted_count: number;
+        failed_count: number;
+        skipped: boolean;
+        reason?: string;
+      }>;
     };
 
 export interface MessagePublic {

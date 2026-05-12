@@ -1,30 +1,40 @@
 """Tool definitions the agent can call.
 
 We send these to the provider as a ``tools=[...]`` parameter; the
-model decides when to invoke one, our service layer routes the call
-into :mod:`app.transforms`, and we hand the result back as a
+model decides when to invoke each one, our service layer routes the
+call into :mod:`app.transforms`, and we hand the result back as a
 ``tool_result`` in the next turn.
 
-For G2.2 we ship two tools — enough to prove the loop end-to-end with
-``dedupe``:
+Design notes
+------------
 
-* ``inspect_column`` — read-only stats for one column. The agent uses
-  it to look at the data before proposing a mutation. The result lands
-  in the chat as a histogram / value-count chart so the user can see
-  what the agent is seeing.
+The product position is that **the agent is the data scientist** —
+it decides what to run and runs it. The user gives business context
+("voy a entrenar un modelo de churn"), the agent picks the cleaning
+pipeline. So almost every tool here is *auto-run*: the agent invokes,
+the platform executes, the result lands in the chat as a visual.
 
-* ``propose_dedupe`` — the agent *proposes* a dedupe. We turn this
-  into a "pending action" card in the chat with [Aceptar / Rechazar]
-  buttons. The mutation only runs after the user accepts (see
-  :func:`app.agent.service.accept_pending_action`).
+The original ``propose_*`` pattern (chat card with [Aceptar /
+Rechazar]) is reserved for genuinely irreversible / costly actions —
+we'll bring it back when we have one. For routine cleaning the
+agent just acts; the user can always undo a step from the journal.
+
+Working-copy safety net
+-----------------------
+
+Every transform writes to the user's working copy, not the source
+dataset. So even a mistaken op is recoverable — we keep the
+``before`` snapshot for each row in ``dataset_operations`` and an
+"Undo" surface lives in the frontend.
 
 Tool spec shape
 ---------------
 
-Anthropic tools take ``{name, description, input_schema}`` where the
-schema is JSON-Schema-ish. We hand-write them rather than auto-
-generating from Pydantic so the descriptions stay focused on *agent
-prompting* (when to use, what each arg means in the user's words).
+Anthropic tools take ``{name, description, input_schema}`` where
+``input_schema`` is JSON-Schema-ish. We hand-write them so the
+description is tuned for *agent prompting* (when to use, what each
+arg means in the user's words) rather than auto-generated from
+Pydantic.
 """
 
 from __future__ import annotations
@@ -32,16 +42,17 @@ from __future__ import annotations
 from typing import Any
 
 TOOLS: list[dict[str, Any]] = [
+    # ----- Inspection -----------------------------------------------------
     {
         "name": "inspect_column",
         "description": (
-            "Mira el contenido de una columna del dataset: distribución de "
-            "valores, cantidad de nulos, estadísticos básicos. ÚSALA antes "
-            "de proponer una operación que toque esa columna — así puedes "
-            "darle al usuario un diagnóstico concreto antes de la "
-            "aprobación. El resultado se muestra automáticamente al usuario "
-            "como un gráfico inline (histograma para columnas numéricas, "
-            "barras de valores más frecuentes para texto)."
+            "Mira el contenido de una columna: distribución de valores, "
+            "estadísticos básicos, porcentaje de nulos. Llámala cuando "
+            "necesites entender los datos de una columna antes de "
+            "transformarla. El resultado se muestra automáticamente al "
+            "usuario como gráfico inline (histograma para numéricas, "
+            "barras horizontales de valores más frecuentes para texto, "
+            "donut con % de nulos)."
         ),
         "input_schema": {
             "type": "object",
@@ -55,16 +66,33 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "propose_dedupe",
+        "name": "preview_duplicates",
         "description": (
-            "Propone eliminar filas duplicadas según una o varias columnas. "
-            "Esta tool NO ejecuta nada de inmediato — al invocarla, "
-            "dataprep le muestra al usuario una tarjeta con [Aceptar / "
-            "Rechazar] y un resumen de los duplicados encontrados. "
-            "Solo si el usuario acepta, la ejecución real corre y verás un "
-            "tool_result con el conteo final. ÚSALA cuando hayas confirmado "
-            "que existen duplicados (con preview o con el análisis de "
-            "calidad previo)."
+            "Sin eliminar nada, encuentra cuántos duplicados habría si "
+            "deduplicaras por una o varias columnas. Útil para reportar "
+            "al usuario qué encontraste antes de ejecutar ``dedupe``, o "
+            "para validar tu propuesta interna."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                },
+            },
+            "required": ["columns"],
+        },
+    },
+    # ----- Mutating ops (all auto-run, no approval card) -----------------
+    {
+        "name": "dedupe",
+        "description": (
+            "Elimina filas duplicadas según una o varias columnas. "
+            "Ejecuta directo — el original del dataset queda intacto en "
+            "la copia de trabajo del usuario y el cambio queda en el "
+            "journal para que pueda deshacerlo si quiere."
         ),
         "input_schema": {
             "type": "object",
@@ -74,51 +102,170 @@ TOOLS: list[dict[str, Any]] = [
                     "items": {"type": "string"},
                     "minItems": 1,
                     "description": (
-                        "Columnas que definen 'duplicado'. Ej: ['email'] "
-                        "elimina filas con el mismo email. ['nombre', "
-                        "'apellido'] elimina filas con la misma "
-                        "combinación de nombre y apellido."
+                        "Columnas que definen 'duplicado'. ['email'] elimina "
+                        "filas con el mismo email; ['nombre', 'apellido'] "
+                        "compara la combinación."
                     ),
                 },
                 "keep": {
                     "type": "string",
                     "enum": ["first", "last"],
-                    "description": (
-                        "Cuál fila mantener de cada grupo duplicado. "
-                        "'first' = la primera aparición (lo más común). "
-                        "'last' = la última (útil cuando hay versiones "
-                        "más recientes al final)."
-                    ),
+                    "description": "Cuál fila de cada grupo duplicado conservar.",
                 },
                 "normalize_text": {
                     "type": "boolean",
                     "description": (
-                        "Si true, compara columnas de texto normalizadas "
-                        "(minúsculas + sin espacios extra) — útil para "
-                        "emails como 'Juan@correo.com' vs 'juan@correo.com'. "
-                        "La fila que sobreviva mantiene su casing original."
-                    ),
-                },
-                "reason": {
-                    "type": "string",
-                    "description": (
-                        "Explicación corta (1-2 frases) que el usuario "
-                        "verá en la tarjeta de aprobación, en su idioma. "
-                        "Ej: 'Hay 3 emails duplicados. Mantengo la "
-                        "primera aparición de cada uno.'"
+                        "Comparar texto normalizado (minúsculas + sin "
+                        "espacios extra) — útil para 'Juan@correo.com' vs "
+                        "'juan@correo.com'."
                     ),
                 },
             },
-            "required": ["columns", "reason"],
+            "required": ["columns"],
+        },
+    },
+    {
+        "name": "fillna",
+        "description": (
+            "Rellena valores nulos / faltantes. Cuando omites 'columns' "
+            "actúa sobre todas las que tienen nulos. ``strategy='auto'`` "
+            "es lo más común: mediana para numéricas, moda para texto. "
+            "Solo usa ``strategy='drop_row'`` si los nulos son tantos que "
+            "imputar arruinaría el análisis (típicamente < 5% del dataset)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Omite para auto-detectar todas las columnas con nulos.",
+                },
+                "strategy": {
+                    "type": "string",
+                    "enum": ["auto", "median", "mean", "mode", "constant", "drop_row"],
+                    "description": (
+                        "'auto' = mediana para numéricas, moda para texto "
+                        "(default seguro). 'constant' requiere 'constant'. "
+                        "'drop_row' elimina filas con muchos nulos."
+                    ),
+                },
+                "constant": {
+                    "description": (
+                        "Valor literal para strategy='constant' (str, int, float)."
+                    ),
+                },
+                "min_pct_to_drop": {
+                    "type": "number",
+                    "description": (
+                        "Solo aplica con strategy='drop_row'. Fracción mínima "
+                        "(0-1) de columnas nulas en una fila para eliminarla. "
+                        "Default 0.5."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "normalize_text",
+        "description": (
+            "Limpia variantes de texto: casing inconsistente, espacios "
+            "extra, acentos. Default sensible: 'title' case + strip + "
+            "collapse_spaces. Llámala cuando una columna mezcla 'España' / "
+            "'españa' / 'ESPAÑA', o cuando hay espacios sueltos."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                },
+                "case": {
+                    "type": "string",
+                    "enum": ["lower", "upper", "title", "preserve"],
+                    "description": "Casing final. 'preserve' solo arregla espacios/acentos.",
+                },
+                "strip": {"type": "boolean"},
+                "collapse_spaces": {"type": "boolean"},
+                "remove_accents": {
+                    "type": "boolean",
+                    "description": (
+                        "false por default — el español a veces necesita acentos. "
+                        "Actívalo cuando el dataset tenga 'Mexico' / 'México' "
+                        "como variantes."
+                    ),
+                },
+            },
+            "required": ["columns"],
+        },
+    },
+    {
+        "name": "parse_dates",
+        "description": (
+            "Convierte columnas de texto con fechas en formato heterogéneo "
+            "a datetime tipado. Prueba varios formatos comunes en orden y "
+            "se queda con el que más filas reconozca."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                },
+                "formats": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Lista opcional de formatos strftime para probar en "
+                        "orden. Omite para usar el set default que cubre "
+                        "ISO, dd/mm/yyyy, mm/dd/yyyy, con y sin hora."
+                    ),
+                },
+            },
+            "required": ["columns"],
+        },
+    },
+    {
+        "name": "normalize_numeric",
+        "description": (
+            "Convierte strings como '1,234.56' / '$ 1.200' / '45%' a "
+            "números reales. Detecta el separador decimal automáticamente. "
+            "Llámala cuando una columna debería ser numérica pero llegó "
+            "como texto con símbolos."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                },
+                "decimal": {
+                    "type": "string",
+                    "enum": ["auto", ".", ","],
+                    "description": (
+                        "'auto' detecta por frecuencia. '.' fuerza punto "
+                        "decimal (estilo US). ',' fuerza coma decimal "
+                        "(estilo EU)."
+                    ),
+                },
+            },
+            "required": ["columns"],
         },
     },
 ]
 
 
-# Names of tools whose effect should produce a "pending action card"
-# (rendered in the chat with Accept/Reject) rather than executing
-# immediately. The agent service short-circuits these on receipt.
-PENDING_ACTION_TOOLS: set[str] = {"propose_dedupe"}
+# Reserved for future irreversible / costly ops. Empty for the current
+# slice — every tool above is auto-run and the user controls outcomes
+# via the undo journal, not by approving each step.
+PENDING_ACTION_TOOLS: set[str] = set()
 
 
 __all__ = ["PENDING_ACTION_TOOLS", "TOOLS"]

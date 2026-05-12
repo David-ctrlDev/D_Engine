@@ -94,9 +94,213 @@ function VisualBlock({
           conversationId={conversationId}
         />
       );
+    case "fillna_summary":
+      return <FillnaSummaryBlock viz={viz} />;
+    case "normalize_text_summary":
+      return <NormalizeTextSummaryBlock viz={viz} />;
+    case "parse_dates_summary":
+      return <ParseDatesSummaryBlock viz={viz} />;
+    case "normalize_numeric_summary":
+      return <NormalizeNumericSummaryBlock viz={viz} />;
     default:
       return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Fillna summary — table of column / strategy / fill value / count
+// ---------------------------------------------------------------------------
+
+function FillnaSummaryBlock({
+  viz,
+}: {
+  viz: Extract<Visualization, { kind: "fillna_summary" }>;
+}) {
+  return (
+    <BlockShell title={`Nulos rellenados (${viz.total_filled} valores)`}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-muted-foreground text-left">
+              <th className="px-2 py-1 font-medium">Columna</th>
+              <th className="px-2 py-1 font-medium">Estrategia</th>
+              <th className="px-2 py-1 font-medium">Valor usado</th>
+              <th className="px-2 py-1 text-right font-medium">Rellenados</th>
+            </tr>
+          </thead>
+          <tbody className="divide-border/40 divide-y">
+            {viz.filled.map((f, i) => (
+              <tr key={i}>
+                <td className="px-2 py-1 font-mono">{f.column}</td>
+                <td className="text-muted-foreground px-2 py-1">{f.strategy}</td>
+                <td className="px-2 py-1 font-mono">{f.value}</td>
+                <td className="px-2 py-1 text-right tabular-nums">{f.filled_count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </BlockShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Normalize-text summary — collapsed variants per column
+// ---------------------------------------------------------------------------
+
+function NormalizeTextSummaryBlock({
+  viz,
+}: {
+  viz: Extract<Visualization, { kind: "normalize_text_summary" }>;
+}) {
+  return (
+    <BlockShell title="Texto normalizado">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-muted-foreground text-left">
+              <th className="px-2 py-1 font-medium">Columna</th>
+              <th className="px-2 py-1 font-medium">Cambio</th>
+              <th className="px-2 py-1 text-right font-medium">Antes</th>
+              <th className="px-2 py-1 text-right font-medium">Ahora</th>
+              <th className="px-2 py-1 text-right font-medium">Variantes fusionadas</th>
+            </tr>
+          </thead>
+          <tbody className="divide-border/40 divide-y">
+            {viz.applied.map((a, i) => {
+              const changeBits: string[] = [];
+              if (a.case !== "preserve") changeBits.push(a.case);
+              if (a.strip) changeBits.push("strip");
+              if (a.collapse_spaces) changeBits.push("espacios");
+              if (a.remove_accents) changeBits.push("acentos");
+              return (
+                <tr key={i}>
+                  <td className="px-2 py-1 font-mono">{a.column}</td>
+                  <td className="text-muted-foreground px-2 py-1">
+                    {changeBits.join(" · ")}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums">
+                    {a.distinct_before}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums">
+                    {a.distinct_after}
+                  </td>
+                  <td
+                    className={cn(
+                      "px-2 py-1 text-right tabular-nums",
+                      a.collapsed_variants > 0
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {a.collapsed_variants > 0 ? `−${a.collapsed_variants}` : "0"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </BlockShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Parse-dates summary — parsed / failed count per column
+// ---------------------------------------------------------------------------
+
+function ParseDatesSummaryBlock({
+  viz,
+}: {
+  viz: Extract<Visualization, { kind: "parse_dates_summary" }>;
+}) {
+  return (
+    <BlockShell title="Fechas reconocidas">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-muted-foreground text-left">
+              <th className="px-2 py-1 font-medium">Columna</th>
+              <th className="px-2 py-1 font-medium">Formato detectado</th>
+              <th className="px-2 py-1 text-right font-medium">Reconocidas</th>
+              <th className="px-2 py-1 text-right font-medium">No reconocidas</th>
+            </tr>
+          </thead>
+          <tbody className="divide-border/40 divide-y">
+            {viz.results.map((r, i) => (
+              <tr key={i}>
+                <td className="px-2 py-1 font-mono">{r.column}</td>
+                <td className="text-muted-foreground px-2 py-1 font-mono">
+                  {r.matched_format ?? (r.skipped ? "ya era fecha" : "—")}
+                </td>
+                <td className="px-2 py-1 text-right tabular-nums">{r.parsed_count}</td>
+                <td
+                  className={cn(
+                    "px-2 py-1 text-right tabular-nums",
+                    r.failed_count > 0
+                      ? "text-destructive"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {r.failed_count}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </BlockShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Normalize-numeric summary — converted / failed count per column
+// ---------------------------------------------------------------------------
+
+function NormalizeNumericSummaryBlock({
+  viz,
+}: {
+  viz: Extract<Visualization, { kind: "normalize_numeric_summary" }>;
+}) {
+  return (
+    <BlockShell title="Números reconocidos">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-muted-foreground text-left">
+              <th className="px-2 py-1 font-medium">Columna</th>
+              <th className="px-2 py-1 font-medium">Separador</th>
+              <th className="px-2 py-1 text-right font-medium">Convertidos</th>
+              <th className="px-2 py-1 text-right font-medium">No convertidos</th>
+            </tr>
+          </thead>
+          <tbody className="divide-border/40 divide-y">
+            {viz.results.map((r, i) => (
+              <tr key={i}>
+                <td className="px-2 py-1 font-mono">{r.column}</td>
+                <td className="text-muted-foreground px-2 py-1 font-mono">
+                  {r.skipped ? r.reason ?? "saltada" : r.decimal ?? "—"}
+                </td>
+                <td className="px-2 py-1 text-right tabular-nums">
+                  {r.converted_count}
+                </td>
+                <td
+                  className={cn(
+                    "px-2 py-1 text-right tabular-nums",
+                    r.failed_count > 0
+                      ? "text-destructive"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {r.failed_count}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </BlockShell>
+  );
 }
 
 // ---------------------------------------------------------------------------

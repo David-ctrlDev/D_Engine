@@ -27,7 +27,11 @@ from typing import Any, cast
 import polars as pl
 
 from app.transforms.ops import dedupe as _dedupe_op
+from app.transforms.ops import fillna as _fillna_op
 from app.transforms.ops import inspect as _inspect_op
+from app.transforms.ops import normalize_numeric as _normalize_numeric_op
+from app.transforms.ops import normalize_text as _normalize_text_op
+from app.transforms.ops import parse_dates as _parse_dates_op
 from app.transforms.types import (
     OperationError,
     OperationResult,
@@ -46,6 +50,10 @@ _INSPECT_REGISTRY: dict[str, _OpFn] = {
 # Mutating operations — produce a new snapshot.
 _MUTATE_REGISTRY: dict[str, _OpFn] = {
     "dedupe": cast("_OpFn", _dedupe_op.dedupe),
+    "fillna": cast("_OpFn", _fillna_op.fillna),
+    "normalize_text": cast("_OpFn", _normalize_text_op.normalize_text),
+    "parse_dates": cast("_OpFn", _parse_dates_op.parse_dates),
+    "normalize_numeric": cast("_OpFn", _normalize_numeric_op.normalize_numeric),
 }
 
 
