@@ -29,7 +29,7 @@ from fastapi import (
 )
 from sqlalchemy import select
 
-from app.auth import mfa_service, service
+from app.auth import mfa_service, service, sso
 from app.auth.cookies import (
     REFRESH_COOKIE_NAME,
     clear_session_cookies,
@@ -70,8 +70,15 @@ from app.auth.schemas import (
     VerifyEmailRequest,
     VerifyEmailResponse,
 )
+from app.config import settings
 from app.core import security as crypto
 from app.core.rate_limit import limiter
+from app.core.tokens import (
+    TokenError,
+    TokenScope,
+    create_oauth_state_token,
+    decode_token,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -498,3 +505,172 @@ async def revoke_session(
     if not changed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
     return MessageResponse(message="Session revoked.")
+
+
+# ===========================================================================
+# Single-Sign-On (OAuth 2.0 / OpenID Connect)
+# ===========================================================================
+#
+# Flow:
+#
+#   1. User clicks "Continue with Google" on the frontend.
+#   2. Browser GET /sso/google/start (this server).
+#   3. We mint a state JWT, set it as an HttpOnly cookie, redirect
+#      the browser to Google's authorize URL with the JWT in the
+#      ``state`` query parameter.
+#   4. User grants consent on Google's UI.
+#   5. Google redirects browser to /sso/google/callback?code=...&state=...
+#   6. We verify state-cookie == state-param, exchange the code
+#      for tokens at Google, fetch userinfo, find-or-provision the
+#      user + tenant, set the regular auth cookies, redirect the
+#      browser to /dashboard.
+#
+# Failure paths all redirect back to the frontend login at
+# /login?sso_error=<code> so the user gets a friendly toast
+# instead of a server stack trace.
+
+
+OAUTH_STATE_COOKIE = "oauth_state"
+
+
+def _redirect_to_login_with_error(code: str) -> Response:
+    """Build a 302 back to the frontend login page with an
+    ``sso_error`` query param the frontend reads + toasts."""
+    from fastapi.responses import RedirectResponse
+
+    url = f"{str(settings.frontend_url).rstrip('/')}/login?sso_error={code}"
+    return RedirectResponse(url, status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/sso/{provider}/start")
+async def sso_start(provider: str, request: Request) -> Response:
+    """Kick off the OAuth round-trip for ``provider``."""
+    import secrets as _secrets
+
+    from fastapi.responses import RedirectResponse
+
+    if provider not in sso.SUPPORTED_PROVIDERS:
+        return _redirect_to_login_with_error("unsupported_provider")
+
+    if sso.provider_config(provider) is None:
+        return _redirect_to_login_with_error("not_configured")
+
+    nonce = _secrets.token_urlsafe(16)
+    state = create_oauth_state_token(provider=provider, nonce=nonce)
+    authorize_url = sso.build_authorize_url(provider=provider, state=state)
+
+    redirect = RedirectResponse(authorize_url, status_code=status.HTTP_302_FOUND)
+    # SameSite must be ``lax`` (not ``strict``) so the cookie is
+    # included on the top-level navigation back from the provider.
+    # The state value goes through the provider's redirect, so
+    # CSRF protection comes from matching cookie==URL-param, not
+    # from the SameSite policy alone.
+    redirect.set_cookie(
+        key=OAUTH_STATE_COOKIE,
+        value=state,
+        max_age=settings.jwt_oauth_state_ttl_seconds,
+        path="/api/v1/auth/sso",
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+    )
+    # ``request`` is currently unused — kept in the signature so
+    # FastAPI populates it when we extend this with audit metadata.
+    del request
+    return redirect
+
+
+@router.get("/sso/{provider}/callback")
+async def sso_callback(
+    provider: str,
+    session: SessionDep,
+    meta: RequestMetaDep,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    state_cookie: Annotated[str | None, Cookie(alias=OAUTH_STATE_COOKIE)] = None,
+) -> Response:
+    """Handle the provider's redirect back. Sets auth cookies on
+    success and bounces the browser to ``/dashboard``."""
+    from fastapi.responses import RedirectResponse
+
+    if provider not in sso.SUPPORTED_PROVIDERS:
+        return _redirect_to_login_with_error("unsupported_provider")
+
+    # User cancelled / provider returned an error.
+    if error:
+        return _redirect_to_login_with_error(error)
+
+    if not code or not state or not state_cookie:
+        return _redirect_to_login_with_error("missing_state")
+
+    # CSRF check: cookie must equal URL param.
+    if state != state_cookie:
+        return _redirect_to_login_with_error("state_mismatch")
+
+    # Validate the JWT and bind it to this provider.
+    try:
+        payload = decode_token(state, expected_scope=TokenScope.oauth_state)
+    except TokenError:
+        return _redirect_to_login_with_error("invalid_state")
+    if payload.get("provider") != provider:
+        return _redirect_to_login_with_error("provider_mismatch")
+
+    # Exchange the code for userinfo at the provider.
+    try:
+        user_info = await sso.exchange_code_for_userinfo(provider=provider, code=code)
+    except sso.SsoNotConfiguredError:
+        return _redirect_to_login_with_error("not_configured")
+    except sso.SsoMissingEmailError:
+        return _redirect_to_login_with_error("no_email")
+    except sso.SsoExchangeFailedError:
+        return _redirect_to_login_with_error("exchange_failed")
+    except Exception:  # pragma: no cover — defensive net
+        return _redirect_to_login_with_error("unknown_error")
+
+    # Find or provision the user, issue session (or MFA challenge).
+    try:
+        result = await sso.login_or_provision(
+            session,
+            user_info=user_info,
+            provider=provider,
+            ip=meta.ip,
+            user_agent=meta.user_agent,
+        )
+    except AuthError as e:
+        await session.rollback()
+        # AuthError → human-readable on the frontend.
+        return _redirect_to_login_with_error(f"auth_{type(e).__name__.lower()}")
+
+    await session.commit()
+
+    # MFA branch: send the user to /login/mfa with the pending
+    # token stashed in sessionStorage just like the password flow.
+    # Since we can't write to sessionStorage from a server redirect,
+    # we set a short-lived cookie the frontend's login page picks up.
+    if isinstance(result, service.MFAChallenge):
+        redirect = RedirectResponse(
+            f"{str(settings.frontend_url).rstrip('/')}/login/mfa?sso=1",
+            status_code=status.HTTP_302_FOUND,
+        )
+        redirect.set_cookie(
+            key="sso_mfa_token",
+            value=result.mfa_token,
+            max_age=settings.jwt_mfa_pending_ttl_seconds,
+            path="/",
+            httponly=False,  # readable from JS so the form can post it
+            secure=settings.cookie_secure,
+            samesite="lax",
+        )
+        redirect.delete_cookie(OAUTH_STATE_COOKIE, path="/api/v1/auth/sso")
+        return redirect
+
+    # Happy path — set the real auth cookies and bounce to /dashboard.
+    redirect = RedirectResponse(
+        f"{str(settings.frontend_url).rstrip('/')}/dashboard",
+        status_code=status.HTTP_302_FOUND,
+    )
+    set_access_cookie(redirect, result.access_token)
+    set_refresh_cookie(redirect, result.refresh_token, expires_at=result.refresh_expires_at)
+    redirect.delete_cookie(OAUTH_STATE_COOKIE, path="/api/v1/auth/sso")
+    return redirect

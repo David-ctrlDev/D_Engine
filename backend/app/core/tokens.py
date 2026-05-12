@@ -32,6 +32,12 @@ from app.config import settings
 class TokenScope(StrEnum):
     access = "access"
     mfa_pending = "mfa_pending"
+    # CSRF state token for the OAuth round-trip. Set as an HttpOnly
+    # cookie on ``/sso/{provider}/start`` and verified on the
+    # callback against the ``state`` query parameter the provider
+    # echoes back. JWT here (not opaque) so we can carry the
+    # provider name inside the signed payload without a DB row.
+    oauth_state = "oauth_state"
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +97,19 @@ def create_mfa_pending_token(*, user_id: UUID) -> str:
         scope=TokenScope.mfa_pending,
         subject=str(user_id),
         ttl_seconds=settings.jwt_mfa_pending_ttl_seconds,
+    )
+
+
+def create_oauth_state_token(*, provider: str, nonce: str) -> str:
+    """Mint the short-lived state JWT used to defend against CSRF on
+    the OAuth round-trip. The ``sub`` claim carries the nonce so
+    every flow has a unique signed token; ``provider`` is checked
+    on the callback against the URL path."""
+    return _encode(
+        scope=TokenScope.oauth_state,
+        subject=nonce,
+        ttl_seconds=settings.jwt_oauth_state_ttl_seconds,
+        provider=provider,
     )
 
 

@@ -11,6 +11,7 @@ export default function RegisterPage() {
       <AuthPageHeader
         eyebrow={t("auth.register.eyebrow")}
         title={t("auth.register.title")}
+        accent={t("auth.register.title_accent")}
         subtitle={t("auth.register.subtitle")}
       />
       <RegisterForm />

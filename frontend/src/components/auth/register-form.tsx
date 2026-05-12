@@ -55,9 +55,15 @@ export function RegisterForm() {
     }
   }
 
+  const FIELD_DELAY_BASE = 120;
+  const FIELD_DELAY_STEP = 60;
+  const fieldStyle = (i: number) => ({
+    animationDelay: `${FIELD_DELAY_BASE + FIELD_DELAY_STEP * i}ms`,
+  });
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
-      <div className="space-y-2">
+      <div className="auth-field-in space-y-2" style={fieldStyle(0)}>
         <Label htmlFor="register-email">{t("common.email")}</Label>
         <Input
           id="register-email"
@@ -70,7 +76,7 @@ export function RegisterForm() {
         {errors.email && <p className="text-destructive text-sm">{errors.email.message}</p>}
       </div>
 
-      <div className="space-y-2">
+      <div className="auth-field-in space-y-2" style={fieldStyle(1)}>
         <Label htmlFor="register-workspace">{t("common.workspace_name")}</Label>
         <Input
           id="register-workspace"
@@ -85,7 +91,7 @@ export function RegisterForm() {
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className="auth-field-in space-y-2" style={fieldStyle(2)}>
         <Label htmlFor="register-password">{t("common.password")}</Label>
         <Input
           id="register-password"
@@ -112,15 +118,20 @@ export function RegisterForm() {
         </div>
       )}
 
-      <Button
-        type="submit"
-        className="h-11 w-full bg-gradient-to-r from-sky-500 via-indigo-500 to-fuchsia-500 text-white shadow-lg shadow-indigo-500/20 transition-shadow hover:shadow-indigo-500/30 disabled:opacity-70"
-        disabled={submitting}
-      >
-        {submitting ? t("auth.register.submitting") : t("auth.register.submit")}
-      </Button>
+      <div className="auth-field-in" style={fieldStyle(3)}>
+        <Button
+          type="submit"
+          className="h-11 w-full bg-indigo-600 font-medium text-white shadow-[0_4px_16px_-4px_oklch(0.5_0.18_268/0.45),0_1px_2px_oklch(0_0_0/0.3)] transition-all hover:-translate-y-px hover:bg-indigo-500 hover:shadow-[0_6px_20px_-6px_oklch(0.55_0.2_268/0.6)] focus-visible:ring-[3px] focus-visible:ring-indigo-400/40 disabled:opacity-60 disabled:hover:translate-y-0"
+          disabled={submitting}
+        >
+          {submitting ? t("auth.register.submitting") : t("auth.register.submit")}
+        </Button>
+      </div>
 
-      <p className="text-muted-foreground text-center text-sm">
+      <p
+        className="auth-field-in text-muted-foreground text-center text-sm"
+        style={fieldStyle(4)}
+      >
         {t("auth.register.have_account")}{" "}
         <Link href="/login" className="text-foreground underline">
           {t("auth.register.login_link")}

@@ -1,19 +1,12 @@
 "use client";
 
-import { AuthPageHeader } from "@/components/auth/auth-page-header";
 import { LoginForm } from "@/components/auth/login-form";
-import { useT } from "@/lib/i18n/provider";
 
+/**
+ * Login page — minimal wrapper. The form component owns the
+ * eyebrow, ``<h1>`` and tenant subtitle so all the auth-page
+ * copy stays colocated with the inputs.
+ */
 export default function LoginPage() {
-  const t = useT();
-  return (
-    <>
-      <AuthPageHeader
-        eyebrow={t("auth.login.eyebrow")}
-        title={t("auth.login.title")}
-        subtitle={t("auth.login.subtitle")}
-      />
-      <LoginForm />
-    </>
-  );
+  return <LoginForm />;
 }

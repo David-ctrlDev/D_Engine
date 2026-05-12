@@ -7,13 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
-  /* Display serif for the editorial auth hero. Loaded via next/font
-     in app/layout.tsx; kept exported as a variable so anything else
-     can use ``font-serif`` to opt in. */
-  --font-serif: var(--font-fraunces), Georgia, "Times New Roman", serif;
+  --font-heading: var(--font-geist-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -52,73 +48,97 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ---------------------------------------------------------------------------
+ * Theme tokens
+ *
+ * Both themes are *tinted neutrals* rather than pure greyscale —
+ * paper-warm in light mode, slightly-blue-cool in dark mode. The
+ * palette is a single accent (violet) used sparingly: primary
+ * button + focus rings + brand-coloured affordances. Everything
+ * else is neutral. This is on purpose — the brand mark already
+ * carries the sky/lavender/fuchsia gradient, so the system colour
+ * stays disciplined and lets it lead.
+ * ------------------------------------------------------------------------- */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* Off-white with a kiss of warmth. Pure white is clinical. */
+  --background: oklch(0.99 0.003 80);
+  --foreground: oklch(0.18 0.01 264);
+  /* Card sits a touch lighter than bg + a small shadow → "floating"
+     without the heavy neumorphism look. */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.18 0.01 264);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.18 0.01 264);
+  /* Primary = violet, derived from the logo's lavender. Used for the
+     submit button. Foreground is forced white so contrast holds even
+     when the violet shifts a few percent. */
+  --primary: oklch(0.52 0.2 280);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --secondary: oklch(0.96 0.005 264);
+  --secondary-foreground: oklch(0.22 0.01 264);
+  --muted: oklch(0.96 0.005 264);
+  --muted-foreground: oklch(0.5 0.01 264);
+  --accent: oklch(0.96 0.005 264);
+  --accent-foreground: oklch(0.22 0.01 264);
+  --destructive: oklch(0.577 0.225 25);
+  --border: oklch(0.92 0.005 264);
+  --input: oklch(0.92 0.005 264);
+  /* Ring follows primary so focus states feel intentional, not random. */
+  --ring: oklch(0.52 0.2 280);
+  --chart-1: oklch(0.65 0.18 280);
+  --chart-2: oklch(0.6 0.16 220);
+  --chart-3: oklch(0.7 0.18 320);
+  --chart-4: oklch(0.55 0.14 200);
+  --chart-5: oklch(0.45 0.1 264);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar: oklch(0.985 0.004 264);
+  --sidebar-foreground: oklch(0.18 0.01 264);
+  --sidebar-primary: oklch(0.52 0.2 280);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-accent: oklch(0.96 0.005 264);
+  --sidebar-accent-foreground: oklch(0.22 0.01 264);
+  --sidebar-border: oklch(0.92 0.005 264);
+  --sidebar-ring: oklch(0.52 0.2 280);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
+  /* Slightly-blue-cool near-black. Pure black is harsh; this reads
+     as "premium dark" the way Linear / Vercel do it. */
+  --background: oklch(0.16 0.008 264);
+  --foreground: oklch(0.97 0.005 264);
+  /* Card a notch lighter so it lifts off the canvas. */
+  --card: oklch(0.205 0.008 264);
+  --card-foreground: oklch(0.97 0.005 264);
+  --popover: oklch(0.205 0.008 264);
+  --popover-foreground: oklch(0.97 0.005 264);
+  /* Same violet, slightly brighter — dark backgrounds eat saturation. */
+  --primary: oklch(0.62 0.22 280);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.27 0.01 264);
+  --secondary-foreground: oklch(0.97 0.005 264);
+  --muted: oklch(0.27 0.01 264);
+  --muted-foreground: oklch(0.7 0.01 264);
+  --accent: oklch(0.27 0.01 264);
+  --accent-foreground: oklch(0.97 0.005 264);
+  --destructive: oklch(0.7 0.2 22);
+  /* Borders + inputs use a translucent white so they sit on the
+     card-vs-bg boundary cleanly. */
   --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.62 0.22 280);
+  --chart-1: oklch(0.7 0.2 280);
+  --chart-2: oklch(0.65 0.18 220);
+  --chart-3: oklch(0.75 0.2 320);
+  --chart-4: oklch(0.6 0.16 200);
+  --chart-5: oklch(0.5 0.12 264);
+  --sidebar: oklch(0.205 0.008 264);
+  --sidebar-foreground: oklch(0.97 0.005 264);
+  --sidebar-primary: oklch(0.62 0.22 280);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.27 0.01 264);
+  --sidebar-accent-foreground: oklch(0.97 0.005 264);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: oklch(0.62 0.22 280);
 }
 
 @layer base {
@@ -130,6 +150,115 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Auth surface animations.
+ *
+ * All authored by hand instead of using a library because we only need
+ * a handful and they're surface-specific. Every animation pauses under
+ * ``prefers-reduced-motion``.
+ * ------------------------------------------------------------------------- */
+
+/* Vertical brand-gradient rule that runs floor to ceiling on the
+ * left edge of the auth surface. Background pans vertically over a
+ * long cycle so the colour zones drift slowly through the rule. */
+@keyframes auth-rule-pan {
+  0% {
+    background-position: 50% 0%;
+  }
+  50% {
+    background-position: 50% 100%;
+  }
+  100% {
+    background-position: 50% 0%;
+  }
+}
+
+/* Submit button shine — a single bright sliver sweeps across on hover. */
+@keyframes auth-button-shine {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+/* Status-dot pulse — soft expand-and-fade halo. Used by the IDE-style
+ * status bar at the bottom of the auth surface. */
+@keyframes auth-dot-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.15;
+    transform: scale(2.4);
+  }
+}
+
+/* Field stagger — each input fades + slides up. The stagger delay is
+ * applied per element via inline ``style={{ animationDelay: ... }}``
+ * so the sequence is data-driven, not hard-coded here. */
+@keyframes auth-field-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.auth-rule-pan {
+  background-size: 100% 280%;
+  animation: auth-rule-pan 28s ease-in-out infinite;
+}
+
+.auth-field-in {
+  animation: auth-field-in 500ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.auth-dot-pulse {
+  animation: auth-dot-pulse 2.4s ease-in-out infinite;
+}
+
+/* Submit button shine. ``pointer-events: none`` so the pseudo never
+ * eats clicks. Triggered by hover on the host. */
+.auth-shine-host {
+  position: relative;
+  overflow: hidden;
+}
+.auth-shine-host::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    transparent 38%,
+    oklch(1 0 0 / 0.28) 50%,
+    transparent 62%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+}
+.auth-shine-host:hover::before {
+  animation: auth-button-shine 850ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-rule-pan,
+  .auth-field-in,
+  .auth-dot-pulse {
+    animation: none !important;
+  }
+  .auth-shine-host:hover::before {
+    animation: none;
   }
 }
 

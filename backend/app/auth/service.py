@@ -577,7 +577,7 @@ async def login(
             mfa_token=create_mfa_pending_token(user_id=user.id),
         )
 
-    return await _issue_session(session, user_id=user.id, ip=ip, user_agent=user_agent)
+    return await issue_session(session, user_id=user.id, ip=ip, user_agent=user_agent)
 
 
 _DUMMY_BCRYPT_HASH: Final[str] = crypto.hash_password("dummy-anti-timing-pad")
@@ -591,17 +591,24 @@ async def finish_mfa_login(
     user_agent: str | None = None,
 ) -> IssuedSession:
     """Called by ``/auth/mfa/verify`` after a successful TOTP / recovery code."""
-    return await _issue_session(session, user_id=user_id, ip=ip, user_agent=user_agent)
+    return await issue_session(session, user_id=user_id, ip=ip, user_agent=user_agent)
 
 
-async def _issue_session(
+async def issue_session(
     session: AsyncSession,
     *,
     user_id: UUID,
     ip: str | None,
     user_agent: str | None,
 ) -> IssuedSession:
-    """Mint access + refresh credentials and write the session row."""
+    """Mint access + refresh credentials and write the session row.
+
+    Public so the SSO flow can reuse the same code path that the
+    password flow uses after verifying credentials. Behaviour is
+    identical: it resolves the user's active membership, mints a
+    refresh-token row, writes the login-success audit entry, and
+    returns the freshly-issued pair.
+    """
     membership = await _resolve_active_membership(session, user_id=user_id)
     tenant_id = membership.tenant_id
 

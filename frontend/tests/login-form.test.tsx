@@ -15,6 +15,10 @@ const replace = vi.fn();
 const push = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, push }),
+  // ``useSearchParams`` is read by the form's SSO-error handler.
+  // Returning a stub URLSearchParams keeps the test environment
+  // agnostic of the real Next router internals.
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const loginMock = vi.hoisted(() => vi.fn());

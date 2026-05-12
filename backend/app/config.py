@@ -84,6 +84,31 @@ class Settings(BaseSettings):
     jwt_email_verify_ttl_seconds: int = 60 * 60 * 24
     jwt_password_reset_ttl_seconds: int = 60 * 60
     jwt_mfa_pending_ttl_seconds: int = 60 * 5
+    # Short-lived signed state for the OAuth round-trip. 10 min is
+    # the standard window — anything shorter and slow consent flows
+    # fail; anything longer and we're carrying a CSRF surface for
+    # no benefit.
+    jwt_oauth_state_ttl_seconds: int = 60 * 10
+
+    # ----- SSO providers -----
+    # When the *_id / *_secret pair is unset, the backend treats the
+    # provider as "not configured": the /sso/{provider}/start route
+    # redirects back to the frontend with ``?sso_error=not_configured``.
+    # No code path reads these in plaintext after Settings init — the
+    # secret values stay inside ``SecretStr.get_secret_value()`` calls.
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    microsoft_client_id: str | None = None
+    microsoft_client_secret: SecretStr | None = None
+    # Microsoft tenant id (the directory). "common" allows any work
+    # or school account + personal accounts; "organizations" is
+    # work/school only. Customers running their own Entra tenant
+    # set this to their tenant GUID.
+    microsoft_tenant: str = "common"
+    # Backend's own public URL — used to build the redirect_uri
+    # that the provider calls back to. In dev: http://localhost:8000.
+    # In prod: the deployed API origin.
+    backend_url: str = "http://localhost:8000"
 
     # ----- Encryption -----
     fernet_key: SecretStr = Field(min_length=32)
