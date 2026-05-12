@@ -519,6 +519,12 @@ export const es = {
     "Tienes varias conexiones disponibles. ¿Cuál quieres usar para esta conversación?",
   "agent.picker.label": "Conexión",
   "agent.picker.submit": "Empezar",
+
+  // Pending-action card (the [Aceptar / Rechazar] surface above a
+  // visualization when the agent wants to mutate the data).
+  "agent.pending.title": "El asistente quiere ejecutar esta acción",
+  "agent.pending.accept": "Aceptar y ejecutar",
+  "agent.pending.reject": "Rechazar",
   "agent.chat.title": "Conversación con el agente",
   "agent.chat.subtitle_prefix": "Sobre el dataset",
   "agent.chat.back": "Volver al dataset",
@@ -1026,6 +1032,10 @@ export const en: Record<DictionaryKey, string> = {
     "You have multiple connections available. Which one should we use for this conversation?",
   "agent.picker.label": "Connection",
   "agent.picker.submit": "Start",
+
+  "agent.pending.title": "The assistant wants to run this action",
+  "agent.pending.accept": "Accept and run",
+  "agent.pending.reject": "Reject",
   "agent.chat.title": "Conversation with the agent",
   "agent.chat.subtitle_prefix": "About dataset",
   "agent.chat.back": "Back to dataset",

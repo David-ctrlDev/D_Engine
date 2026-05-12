@@ -128,6 +128,17 @@ class AgentMessage(Base):
     # on ``assistant`` rows; the LLM emits them as a trailing
     # ``SUGGESTIONS:[...]`` line we strip server-side.
     suggestions: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    # Inline visual blocks rendered after the message text — histograms,
+    # before/after bars, table previews, value-count pies. Each entry is
+    # a typed spec like ``{"kind": "histogram", "column": "...", "bins": [...]}``
+    # that the frontend dispatches into a chart component.
+    visualizations: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    # Provider-native tool-use envelope. For Anthropic this is a
+    # ``{"tool_use": {...}}`` or ``{"tool_result": {...}}`` block we
+    # stash so we can faithfully replay the conversation when the agent
+    # resumes a thread. Not user-visible by itself; the frontend reads
+    # ``visualizations`` and ``content`` for the UI.
+    tool_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=_utcnow,

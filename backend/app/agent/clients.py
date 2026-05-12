@@ -37,14 +37,31 @@ from app.llm.models import LlmProviderKind
 class ChatMessage:
     """One turn in the prompt we send to the provider.
 
-    ``role`` matches the same enum the DB stores; ``content`` is plain
-    text. We deliberately don't model tool-use messages here yet —
-    they land in G2.3 where each provider needs a slightly different
-    serialisation.
+    For text-only turns (``role`` is ``system`` / ``user`` /
+    ``assistant``), ``content`` is the body. For tool-result turns the
+    ``content`` carries the JSON-stringified result and ``tool_use_id``
+    points at the assistant's tool-use call this satisfies (Anthropic's
+    request shape — other providers will get adapter code as they
+    land). When the agent itself emits ``tool_use`` blocks, we
+    represent them with ``role="assistant"`` and ``tool_calls`` set.
     """
 
-    role: str  # 'system' / 'user' / 'assistant'
+    role: str  # 'system' / 'user' / 'assistant' / 'tool'
     content: str
+    # Anthropic ``tool_use`` envelope emitted by the assistant —
+    # used when we re-feed a tool-using turn back to the model.
+    tool_calls: list[dict[str, Any]] | None = None
+    # The id of the ``tool_use`` block this ``tool`` turn answers.
+    tool_use_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCall:
+    """One tool the assistant decided to call this turn."""
+
+    id: str
+    name: str
+    args: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +72,16 @@ class ChatCompletion:
     # OpenAI always do; Ollama does in recent versions; Google did not
     # until recently and we tolerate ``None`` rather than guessing.
     token_usage: dict[str, int] | None
+    # Tools the assistant wants to call this turn. The agent service
+    # walks these, runs each, and feeds the results back in a follow-
+    # up turn until the assistant returns with no tool calls (a final
+    # text response).
+    tool_calls: tuple[ToolCall, ...] = ()
+    # ``"end_turn"`` (model wrote text and is done), ``"tool_use"``
+    # (model emitted tool calls, expects tool results back), or
+    # whatever stop reason the provider returned. We only branch on
+    # ``tool_use`` today.
+    stop_reason: str | None = None
 
 
 class ProviderError(Exception):
@@ -71,24 +98,80 @@ _CHAT_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 # ---------------------------------------------------------------------------
 
 
+def _build_anthropic_messages(messages: list[ChatMessage]) -> list[dict[str, Any]]:
+    """Map our internal message list to Anthropic's wire format.
+
+    The interesting bits:
+
+    * Assistant turns with ``tool_calls`` set become a list of
+      ``tool_use`` content blocks alongside any text, so the model
+      can see its own past tool-use turn when we replay history.
+    * ``tool`` turns become ``user`` messages with a single
+      ``tool_result`` content block pointing at the matching
+      ``tool_use_id``. (Anthropic models tool results as user turns
+      by design; the role label looks weird but it's their API.)
+    """
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        if m.role == "system":
+            continue  # system text is hoisted to the top-level ``system`` field
+        if m.role == "tool" and m.tool_use_id is not None:
+            out.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": m.tool_use_id,
+                            "content": m.content,
+                        }
+                    ],
+                }
+            )
+            continue
+        if m.role == "assistant" and m.tool_calls:
+            blocks: list[dict[str, Any]] = []
+            if m.content:
+                blocks.append({"type": "text", "text": m.content})
+            for tc in m.tool_calls:
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": tc["id"],
+                        "name": tc["name"],
+                        "input": tc["input"],
+                    }
+                )
+            out.append({"role": "assistant", "content": blocks})
+            continue
+        out.append({"role": m.role, "content": m.content})
+    return out
+
+
 async def _chat_anthropic(
     *,
     api_key: str,
     model: str,
     messages: list[ChatMessage],
+    tools: list[dict[str, Any]] | None = None,
 ) -> ChatCompletion:
-    """Anthropic separates the system prompt from the message list."""
+    """Anthropic separates the system prompt from the message list.
+
+    When ``tools`` is provided the model may emit ``tool_use`` blocks
+    instead of (or alongside) text. We pass the blocks back as
+    :class:`ToolCall` instances and let the agent service decide what
+    to run.
+    """
     system_text = "\n\n".join(m.content for m in messages if m.role == "system")
-    body_messages = [
-        {"role": m.role, "content": m.content} for m in messages if m.role in ("user", "assistant")
-    ]
     payload: dict[str, Any] = {
         "model": model,
         "max_tokens": 2048,
-        "messages": body_messages,
+        "messages": _build_anthropic_messages(messages),
     }
     if system_text:
         payload["system"] = system_text
+    if tools:
+        payload["tools"] = tools
     async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT) as client:
         try:
             r = await client.post(
@@ -105,13 +188,24 @@ async def _chat_anthropic(
     if r.status_code >= 400:
         raise ProviderError(f"Anthropic {r.status_code}: {r.text[:300]}")
     data = r.json()
-    # ``content`` is a list of {type, text}. For G2.1 we only ever ask
-    # for text so concatenating the first text block is safe.
     parts = data.get("content") or []
-    text = "".join(p.get("text", "") for p in parts if p.get("type") == "text")
+    text_chunks: list[str] = []
+    tool_calls: list[ToolCall] = []
+    for p in parts:
+        ptype = p.get("type")
+        if ptype == "text":
+            text_chunks.append(p.get("text", ""))
+        elif ptype == "tool_use":
+            tool_calls.append(
+                ToolCall(
+                    id=str(p.get("id", "")),
+                    name=str(p.get("name", "")),
+                    args=p.get("input") or {},
+                )
+            )
     usage = data.get("usage") or {}
     return ChatCompletion(
-        text=text,
+        text="".join(text_chunks),
         token_usage={
             "prompt": int(usage.get("input_tokens", 0)),
             "completion": int(usage.get("output_tokens", 0)),
@@ -119,6 +213,8 @@ async def _chat_anthropic(
         }
         if usage
         else None,
+        tool_calls=tuple(tool_calls),
+        stop_reason=data.get("stop_reason"),
     )
 
 
@@ -270,14 +366,21 @@ async def chat_completion(
     base_url: str | None,
     model: str,
     messages: list[ChatMessage],
+    tools: list[dict[str, Any]] | None = None,
 ) -> ChatCompletion:
     """Dispatch to the per-provider implementation.
 
     The caller has already decrypted the API key; we never persist it
     or log it here.
+
+    ``tools`` is implemented for Anthropic in this slice. The other
+    providers ignore it for now — they'll get per-vendor adapters as
+    the tool-use surface stabilises (each has a different request
+    shape: OpenAI ``tool_calls``, Google ``functionCall`` parts,
+    Ollama OpenAI-compatible tools on recent models).
     """
     if provider is LlmProviderKind.anthropic:
-        return await _chat_anthropic(api_key=api_key, model=model, messages=messages)
+        return await _chat_anthropic(api_key=api_key, model=model, messages=messages, tools=tools)
     if provider is LlmProviderKind.openai:
         return await _chat_openai(api_key=api_key, model=model, messages=messages)
     if provider is LlmProviderKind.google:

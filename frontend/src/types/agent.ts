@@ -21,6 +21,58 @@ export interface ConversationListResponse {
   conversations: ConversationPublic[];
 }
 
+/**
+ * Inline visual blocks the agent can attach to a turn. The agent loop
+ * builds these server-side from operation results (histograms,
+ * before/after bars) or from pending-action proposals. Each shape is
+ * dispatched to a React component in ``MessageVisuals``.
+ *
+ * Stays as an open ``{kind, ...}`` union so we can add new viz types
+ * without breaking the wire format.
+ */
+export type Visualization =
+  | {
+      kind: "histogram";
+      column: string;
+      bins: Array<{ label: string; count: number }>;
+    }
+  | {
+      kind: "value_counts";
+      column: string;
+      items: Array<{ value: string; count: number }>;
+    }
+  | {
+      kind: "null_pct";
+      column: string;
+      null_count: number;
+      total: number;
+      null_pct: number;
+    }
+  | {
+      kind: "before_after";
+      label: string;
+      before: number;
+      after: number;
+      delta_label: string;
+      tone?: "positive" | "neutral" | "warning";
+    }
+  | {
+      kind: "duplicate_preview";
+      columns: string[];
+      duplicate_groups: number;
+      total_duplicates: number;
+      example_groups: Array<{
+        key: Record<string, string | null>;
+        count: number;
+      }>;
+    }
+  | {
+      kind: "pending_action";
+      tool_call_id: string;
+      tool_name: string;
+      args: Record<string, unknown>;
+    };
+
 export interface MessagePublic {
   id: string;
   conversation_id: string;
@@ -33,6 +85,11 @@ export interface MessagePublic {
    * ``assistant`` rows; ``null`` for user/system turns.
    */
   suggestions: string[] | null;
+  /**
+   * Typed visualizations rendered inline after the message text.
+   * ``null`` for plain-text turns.
+   */
+  visualizations: Visualization[] | null;
   token_usage: { prompt: number; completion: number; total: number } | null;
   created_at: string;
 }
@@ -59,8 +116,23 @@ export interface SendMessageRequest {
 }
 
 export interface SendMessageResponse {
-  user_message: MessagePublic;
-  assistant_message: MessagePublic;
+  /**
+   * The user's message we just persisted. ``null`` when the response
+   * comes from a button click (accepting / rejecting a pending
+   * action) instead of typed text.
+   */
+  user_message: MessagePublic | null;
+  /**
+   * The assistant turn(s) the agent loop produced. Often one, but
+   * can be multiple when the agent had to call inspection tools
+   * before giving a final answer.
+   */
+  assistant_messages: MessagePublic[];
+}
+
+export interface ResolvePendingActionRequest {
+  message_id: string;
+  accept: boolean;
 }
 
 export interface UsableCredential {

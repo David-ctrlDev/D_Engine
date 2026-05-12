@@ -23,14 +23,19 @@ from uuid import UUID
 
 from sqlalchemy import desc, select
 
-from app.agent.clients import ChatMessage, ProviderError, chat_completion
+from app.agent.clients import ChatMessage, ProviderError, ToolCall, chat_completion
 from app.agent.models import AgentConversation, AgentMessage, AgentMessageRole
+from app.agent.tools import PENDING_ACTION_TOOLS, TOOLS
 from app.core import encryption
 from app.data.models import Dataset, DataSource, ProfileRun, ProfileRunStatus
 from app.llm.models import LlmCredential
+from app.transforms import service as transforms_service
+from app.transforms.dispatcher import OperationError, OperationResult
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.data.storage import LocalFileStorage
 
 
 # ---------------------------------------------------------------------------
@@ -361,22 +366,24 @@ async def create_conversation(
 # ---------------------------------------------------------------------------
 
 
-async def send_message(
-    session: AsyncSession,
-    *,
-    conversation_id: UUID,
-    content: str,
-) -> tuple[AgentMessage, AgentMessage]:
-    """Append the user message, call the provider, append the response.
+# Anthropic is the only provider with native tool-use wired in for this
+# slice. The others can still chat — they just don't see the tools list
+# and so will never call ``inspect_column`` / ``propose_dedupe``. We hand
+# the user a graceful "ejecuta con Claude por ahora" message in the
+# proxy-action path when they're not on Anthropic.
+_TOOL_USE_PROVIDERS = {"anthropic"}
 
-    Returns the (user_msg, assistant_msg) pair so the router can
-    project them straight to the response without a re-fetch.
-    """
+# Cap on how many inspect-and-respond round-trips one turn can run.
+# A reasonable agent finishes in 1-3 iterations; a runaway loop hits
+# this and bails so we don't accidentally burn tokens.
+_MAX_TOOL_ITERATIONS = 4
+
+
+async def _load_conversation_context(
+    session: AsyncSession, conversation_id: UUID
+) -> tuple[AgentConversation, Dataset, DataSource, LlmCredential, str]:
+    """Common preamble for ``send_message`` and ``send_kickoff_turn``."""
     convo = await get_conversation(session, conversation_id=conversation_id)
-
-    # Load the dataset + source so we can rebuild the system prompt.
-    # We need them out-of-band of the conversation row; a single join
-    # keeps it cheap.
     row = (
         await session.execute(
             select(Dataset, DataSource)
@@ -387,42 +394,261 @@ async def send_message(
     if row is None:
         raise DatasetNotVisibleError(str(convo.dataset_id))
     dataset, source = row
-
-    # Pull the credential and decrypt its API key. RLS still applies —
-    # if the user lost access to the credential since starting the
-    # conversation, this returns None and we bail.
     credential = (
         await session.execute(select(LlmCredential).where(LlmCredential.id == convo.credential_id))
     ).scalar_one_or_none()
     if credential is None:
         raise CredentialNotUsableError(str(convo.credential_id))
     api_key = encryption.decrypt(credential.api_key_encrypted).decode()
+    return convo, dataset, source, credential, api_key
 
-    # Build the message list: fresh system prompt + history + new user turn.
-    system_text = await _build_system_prompt(session, dataset=dataset, source=source)
-    history_rows = (
+
+async def _build_history_messages(
+    session: AsyncSession, conversation_id: UUID, system_text: str
+) -> list[ChatMessage]:
+    """Re-hydrate the LLM message list from persisted rows.
+
+    Assistant turns that carried tool_use blocks get their
+    ``tool_calls`` payload restored. The matching ``system``-role
+    rows that hold tool results are translated back into ``tool``
+    turns the model expects to see.
+    """
+    rows = (
         (
             await session.execute(
                 select(AgentMessage)
-                .where(
-                    AgentMessage.conversation_id == conversation_id,
-                    AgentMessage.role != AgentMessageRole.system,
-                )
+                .where(AgentMessage.conversation_id == conversation_id)
                 .order_by(AgentMessage.created_at)
             )
         )
         .scalars()
         .all()
     )
-    messages = [ChatMessage(role="system", content=system_text)]
-    for m in history_rows:
-        messages.append(ChatMessage(role=m.role.value, content=m.content))
-    messages.append(ChatMessage(role="user", content=content))
+    messages: list[ChatMessage] = [ChatMessage(role="system", content=system_text)]
+    for m in rows:
+        if m.role is AgentMessageRole.system:
+            # Internal tool-result rows ride here; surface them as
+            # tool turns if they carry a tool_use_id payload.
+            if isinstance(m.tool_payload, dict) and "tool_use_id" in m.tool_payload:
+                messages.append(
+                    ChatMessage(
+                        role="tool",
+                        content=m.content,
+                        tool_use_id=str(m.tool_payload["tool_use_id"]),
+                    )
+                )
+            continue
+        tool_calls = None
+        if isinstance(m.tool_payload, dict):
+            raw_calls = m.tool_payload.get("tool_calls")
+            if isinstance(raw_calls, list):
+                tool_calls = raw_calls
+        messages.append(ChatMessage(role=m.role.value, content=m.content, tool_calls=tool_calls))
+    return messages
 
-    # Persist the user message *before* the provider call so a crash
-    # mid-call still leaves a visible trail. We don't commit yet;
-    # the router commits both messages together if the provider
-    # responded ok, or we rollback if it didn't.
+
+async def _run_inspect_tool(
+    session: AsyncSession,
+    *,
+    storage: LocalFileStorage,
+    tenant_id: UUID,
+    user_id: UUID,
+    dataset_id: UUID,
+    conversation_id: UUID,
+    tool_call: ToolCall,
+) -> tuple[str, list[dict[str, Any]]]:
+    """Run a read-only inspection tool and return ``(json_payload,
+    visualizations)``.
+
+    The JSON payload goes back to the model as the tool_result; the
+    visualizations get attached to the assistant message that emitted
+    the call so the user sees the chart inline.
+    """
+    wc = await transforms_service.get_or_create_working_copy(
+        session,
+        storage=storage,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        dataset_id=dataset_id,
+    )
+    try:
+        result: OperationResult = await transforms_service.run_operation(
+            session,
+            storage=storage,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            working_copy=wc,
+            op=tool_call.name,
+            args=tool_call.args,
+            conversation_id=conversation_id,
+        )
+    except OperationError as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False), []
+    return (
+        json.dumps(result.summary, ensure_ascii=False, default=str),
+        result.visualizations,
+    )
+
+
+async def _run_agent_loop(
+    session: AsyncSession,
+    *,
+    storage: LocalFileStorage,
+    tenant_id: UUID,
+    user_id: UUID,
+    conversation: AgentConversation,
+    credential: LlmCredential,
+    api_key: str,
+    working_messages: list[ChatMessage],
+) -> list[AgentMessage]:
+    """Drive the assistant until it stops calling tools or asks for
+    approval. Persists every assistant turn (and internal tool_result
+    rows) along the way."""
+    use_tools = credential.provider.value in _TOOL_USE_PROVIDERS
+    tools_param = TOOLS if use_tools else None
+    produced: list[AgentMessage] = []
+
+    for _ in range(_MAX_TOOL_ITERATIONS):
+        try:
+            completion = await chat_completion(
+                provider=credential.provider,
+                api_key=api_key,
+                base_url=credential.base_url,
+                model=conversation.model,
+                messages=working_messages,
+                tools=tools_param,
+            )
+        except ProviderError:
+            await session.rollback()
+            raise
+
+        cleaned_text, suggestions = _parse_suggestions(completion.text)
+        tool_calls = list(completion.tool_calls)
+
+        # Separate pending actions (user must approve) from auto-run
+        # tools (we run them in this loop iteration).
+        pending = [tc for tc in tool_calls if tc.name in PENDING_ACTION_TOOLS]
+        auto_run = [tc for tc in tool_calls if tc.name not in PENDING_ACTION_TOOLS]
+
+        tool_payload: dict[str, Any] | None = None
+        if tool_calls:
+            tool_payload = {
+                "tool_calls": [
+                    {"id": tc.id, "name": tc.name, "input": tc.args} for tc in tool_calls
+                ]
+            }
+        # Pending-action messages also stash the proposal so the route
+        # layer + frontend can render the approval card without
+        # re-parsing the tool_calls list.
+        visualizations: list[dict[str, Any]] = []
+        if pending:
+            tool_payload = dict(tool_payload or {})
+            tool_payload["pending_actions"] = [
+                {"id": tc.id, "name": tc.name, "args": tc.args} for tc in pending
+            ]
+            for tc in pending:
+                visualizations.append(
+                    {
+                        "kind": "pending_action",
+                        "tool_call_id": tc.id,
+                        "tool_name": tc.name,
+                        "args": tc.args,
+                    }
+                )
+
+        assistant_msg = AgentMessage(
+            conversation_id=conversation.id,
+            role=AgentMessageRole.assistant,
+            content=cleaned_text or "(respuesta vacía del modelo)",
+            suggestions=suggestions,
+            visualizations=visualizations or None,
+            tool_payload=tool_payload,
+            token_usage=completion.token_usage,
+        )
+        session.add(assistant_msg)
+        await session.flush()
+        produced.append(assistant_msg)
+
+        # Pending action → stop the loop, the user has to react.
+        if pending:
+            return produced
+
+        # No tool calls at all → final text answer, we're done.
+        if not auto_run:
+            return produced
+
+        # Auto-run tools (inspect_column / preview_duplicates).
+        # Feed the assistant's tool_use turn back into working history
+        # before appending the tool results.
+        working_messages.append(
+            ChatMessage(
+                role="assistant",
+                content=cleaned_text,
+                tool_calls=tool_payload["tool_calls"] if tool_payload else None,
+            )
+        )
+        for tc in auto_run:
+            tool_result_text, viz = await _run_inspect_tool(
+                session,
+                storage=storage,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                dataset_id=conversation.dataset_id,
+                conversation_id=conversation.id,
+                tool_call=tc,
+            )
+            # Surface the visualization on the assistant turn that
+            # asked for the data — that's what the user sees.
+            if viz:
+                merged = list(assistant_msg.visualizations or []) + viz
+                assistant_msg.visualizations = merged
+            # Persist the tool result as an internal (system-role) row
+            # so we can faithfully replay the conversation later.
+            session.add(
+                AgentMessage(
+                    conversation_id=conversation.id,
+                    role=AgentMessageRole.system,
+                    content=tool_result_text,
+                    tool_payload={"tool_use_id": tc.id},
+                )
+            )
+            await session.flush()
+            working_messages.append(
+                ChatMessage(role="tool", content=tool_result_text, tool_use_id=tc.id)
+            )
+
+    # If we fell out of the loop, surface a polite "I gave up" message
+    # instead of leaving the user hanging.
+    fallback = AgentMessage(
+        conversation_id=conversation.id,
+        role=AgentMessageRole.assistant,
+        content=(
+            "Estoy dando muchas vueltas para resolver esto. "
+            "¿Me cuentas con más detalle qué quieres hacer?"
+        ),
+    )
+    session.add(fallback)
+    await session.flush()
+    produced.append(fallback)
+    return produced
+
+
+async def send_message(
+    session: AsyncSession,
+    *,
+    storage: LocalFileStorage,
+    tenant_id: UUID,
+    user_id: UUID,
+    conversation_id: UUID,
+    content: str,
+) -> tuple[AgentMessage, list[AgentMessage]]:
+    """Append the user message, run the agent loop, return the new
+    rows. The loop persists every assistant turn (and internal tool-
+    result rows) as it goes."""
+    convo, dataset, source, credential, api_key = await _load_conversation_context(
+        session, conversation_id
+    )
+
     user_msg = AgentMessage(
         conversation_id=conversation_id,
         role=AgentMessageRole.user,
@@ -431,40 +657,25 @@ async def send_message(
     session.add(user_msg)
     await session.flush()
 
-    try:
-        completion = await chat_completion(
-            provider=credential.provider,
-            api_key=api_key,
-            base_url=credential.base_url,
-            model=convo.model,
-            messages=messages,
-        )
-    except ProviderError:
-        # Roll back the user-message insert so a failed turn doesn't
-        # leave a half-conversation. The router catches this and
-        # surfaces an HTTP 502.
-        await session.rollback()
-        raise
+    system_text = await _build_system_prompt(session, dataset=dataset, source=source)
+    working_messages = await _build_history_messages(session, conversation_id, system_text)
 
-    cleaned_text, suggestions = _parse_suggestions(completion.text)
-    assistant_msg = AgentMessage(
-        conversation_id=conversation_id,
-        role=AgentMessageRole.assistant,
-        content=cleaned_text or "(respuesta vacía del modelo)",
-        suggestions=suggestions,
-        token_usage=completion.token_usage,
+    assistants = await _run_agent_loop(
+        session,
+        storage=storage,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        conversation=convo,
+        credential=credential,
+        api_key=api_key,
+        working_messages=working_messages,
     )
-    session.add(assistant_msg)
-    await session.flush()
 
-    # If the conversation didn't have a title yet, derive one from the
-    # first user message — first 80 chars, single line. The model
-    # could do better, but for G2.1 this is fine.
     if convo.title is None:
         convo.title = _derive_title(content)
         await session.flush()
 
-    return user_msg, assistant_msg
+    return user_msg, assistants
 
 
 # ---------------------------------------------------------------------------
@@ -486,60 +697,175 @@ _KICKOFF_TRIGGER = (
 async def send_kickoff_turn(
     session: AsyncSession,
     *,
+    storage: LocalFileStorage,
+    tenant_id: UUID,
+    user_id: UUID,
     conversation_id: UUID,
-) -> AgentMessage:
-    """Generate the agent's *opening* message — proactive, structured,
-    intent-capture chips. Persists only an assistant turn (no user
-    message: the user hasn't said anything yet)."""
-    convo = await get_conversation(session, conversation_id=conversation_id)
-    row = (
-        await session.execute(
-            select(Dataset, DataSource)
-            .join(DataSource, Dataset.source_id == DataSource.id)
-            .where(Dataset.id == convo.dataset_id)
-        )
-    ).one_or_none()
-    if row is None:
-        raise DatasetNotVisibleError(str(convo.dataset_id))
-    dataset, source = row
+) -> list[AgentMessage]:
+    """Generate the agent's *opening* turn(s).
 
-    credential = (
-        await session.execute(select(LlmCredential).where(LlmCredential.id == convo.credential_id))
-    ).scalar_one_or_none()
-    if credential is None:
-        raise CredentialNotUsableError(str(convo.credential_id))
-    api_key = encryption.decrypt(credential.api_key_encrypted).decode()
-
+    The kickoff is one assistant message (greeting + diagnosis + intent
+    chips). The agent shouldn't reach for tools on turn 1 — it doesn't
+    yet know what the user wants — so we don't expect ``tool_calls``
+    here in practice, but the loop tolerates them if it does."""
+    convo, dataset, source, credential, api_key = await _load_conversation_context(
+        session, conversation_id
+    )
     system_text = await _build_system_prompt(session, dataset=dataset, source=source)
-    messages = [
+    working_messages: list[ChatMessage] = [
         ChatMessage(role="system", content=system_text),
         ChatMessage(role="user", content=_KICKOFF_TRIGGER),
     ]
-    completion = await chat_completion(
-        provider=credential.provider,
+    assistants = await _run_agent_loop(
+        session,
+        storage=storage,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        conversation=convo,
+        credential=credential,
         api_key=api_key,
-        base_url=credential.base_url,
-        model=convo.model,
-        messages=messages,
+        working_messages=working_messages,
     )
-    cleaned_text, suggestions = _parse_suggestions(completion.text)
-    msg = AgentMessage(
-        conversation_id=conversation_id,
-        role=AgentMessageRole.assistant,
-        content=cleaned_text or "(respuesta vacía del modelo)",
-        suggestions=suggestions,
-        token_usage=completion.token_usage,
-    )
-    session.add(msg)
-    await session.flush()
-    if convo.title is None:
-        # The kickoff is a summary of the dataset; use its first line as
-        # a usable title until the user picks an intent and we can
-        # derive something better.
-        first_line = next((ln for ln in cleaned_text.splitlines() if ln.strip()), "")
+    if convo.title is None and assistants:
+        first_line = next((ln for ln in assistants[0].content.splitlines() if ln.strip()), "")
         convo.title = _derive_title(first_line)
         await session.flush()
-    return msg
+    return assistants
+
+
+# ---------------------------------------------------------------------------
+# Pending-action approval / rejection
+# ---------------------------------------------------------------------------
+
+
+# When the agent emits a ``propose_*`` tool, we save it as a pending
+# action and stop. The user then either accepts (we run the matching
+# mutating op and feed the result back to the agent for the next turn)
+# or rejects (we feed back a "user declined" tool result so the agent
+# can adjust). The mapping below ties each ``propose_*`` tool to its
+# concrete operation name in :mod:`app.transforms`.
+_PROPOSE_TO_OP: dict[str, str] = {
+    "propose_dedupe": "dedupe",
+}
+
+
+class PendingActionError(AgentError):
+    """The pending action doesn't exist or doesn't match the message."""
+
+
+async def _find_pending_action(
+    session: AsyncSession, message_id: UUID, tool_call_id: str
+) -> tuple[AgentMessage, dict[str, Any]]:
+    msg = (
+        await session.execute(select(AgentMessage).where(AgentMessage.id == message_id))
+    ).scalar_one_or_none()
+    if msg is None:
+        raise PendingActionError(str(message_id))
+    payload = msg.tool_payload or {}
+    actions = payload.get("pending_actions") if isinstance(payload, dict) else None
+    if not isinstance(actions, list):
+        raise PendingActionError("La tarjeta no tiene acciones pendientes.")
+    match = next((a for a in actions if a.get("id") == tool_call_id), None)
+    if match is None:
+        raise PendingActionError("No encontré esa acción pendiente.")
+    return msg, match
+
+
+async def resolve_pending_action(
+    session: AsyncSession,
+    *,
+    storage: LocalFileStorage,
+    tenant_id: UUID,
+    user_id: UUID,
+    conversation_id: UUID,
+    message_id: UUID,
+    tool_call_id: str,
+    accept: bool,
+) -> list[AgentMessage]:
+    """Accept (run the proposed op + continue the loop) or reject
+    (feed a "user declined" tool result back to the agent and let it
+    respond)."""
+    convo, dataset, source, credential, api_key = await _load_conversation_context(
+        session, conversation_id
+    )
+    _, action = await _find_pending_action(session, message_id, tool_call_id)
+
+    tool_name = str(action.get("name", ""))
+    tool_args: dict[str, Any] = action.get("args") or {}
+
+    if accept:
+        op_name = _PROPOSE_TO_OP.get(tool_name)
+        if op_name is None:
+            raise PendingActionError(f"No sé cómo ejecutar la acción '{tool_name}' todavía.")
+        wc = await transforms_service.get_or_create_working_copy(
+            session,
+            storage=storage,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            dataset_id=convo.dataset_id,
+        )
+        try:
+            result = await transforms_service.run_operation(
+                session,
+                storage=storage,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                working_copy=wc,
+                op=op_name,
+                args=tool_args,
+                conversation_id=conversation_id,
+                message_id=message_id,
+            )
+        except OperationError as e:
+            result_text = json.dumps({"error": str(e), "accepted": True}, ensure_ascii=False)
+            executed_visuals: list[dict[str, Any]] = []
+        else:
+            result_text = json.dumps(
+                {"accepted": True, **result.summary},
+                ensure_ascii=False,
+                default=str,
+            )
+            executed_visuals = list(result.visualizations)
+    else:
+        result_text = json.dumps(
+            {"accepted": False, "reason": "El usuario rechazó la acción."},
+            ensure_ascii=False,
+        )
+        executed_visuals = []
+
+    # Internal tool-result row so we can replay this turn faithfully.
+    session.add(
+        AgentMessage(
+            conversation_id=conversation_id,
+            role=AgentMessageRole.system,
+            content=result_text,
+            tool_payload={"tool_use_id": tool_call_id, "resolved_via_user": True},
+        )
+    )
+    await session.flush()
+
+    # Re-run the agent loop so the model can react to the result.
+    system_text = await _build_system_prompt(session, dataset=dataset, source=source)
+    working_messages = await _build_history_messages(session, conversation_id, system_text)
+    follow_ups = await _run_agent_loop(
+        session,
+        storage=storage,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        conversation=convo,
+        credential=credential,
+        api_key=api_key,
+        working_messages=working_messages,
+    )
+
+    # If the op produced visuals (e.g., before/after bar), pin them to
+    # the agent's response so the user sees the result inline.
+    if executed_visuals and follow_ups:
+        merged = list(follow_ups[0].visualizations or []) + executed_visuals
+        follow_ups[0].visualizations = merged
+        await session.flush()
+
+    return follow_ups
 
 
 def _derive_title(text: str) -> str:
@@ -552,11 +878,13 @@ __all__ = [
     "ConversationNotFoundError",
     "CredentialNotUsableError",
     "DatasetNotVisibleError",
+    "PendingActionError",
     "create_conversation",
     "get_conversation",
     "get_conversation_with_messages",
     "list_conversations_for_dataset",
     "list_usable_credentials",
+    "resolve_pending_action",
     "send_kickoff_turn",
     "send_message",
 ]

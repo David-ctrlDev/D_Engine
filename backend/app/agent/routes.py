@@ -47,12 +47,15 @@ from app.agent.schemas import (
     ConversationListResponse,
     ConversationPublic,
     MessagePublic,
+    ResolvePendingActionRequest,
     SendMessageRequest,
     SendMessageResponse,
     UsableCredential,
     UsableCredentialsResponse,
 )
 from app.auth.dependencies import AccessClaimsDep, AuthSessionDep, CurrentUserDep
+from app.data.deps import StorageDep
+from app.transforms.service import WorkingCopyError
 
 router = APIRouter(prefix="/api/v1", tags=["agent"])
 
@@ -108,6 +111,7 @@ async def create_conversation(
     session: AuthSessionDep,
     user: CurrentUserDep,
     claims: AccessClaimsDep,
+    storage: StorageDep,
 ) -> ConversationDetail:
     """Create a new conversation. When ``kickoff`` is true (the default),
     the agent's opening turn is generated server-side before the
@@ -140,13 +144,22 @@ async def create_conversation(
     messages: list[MessagePublic] = []
     if body.kickoff:
         try:
-            kickoff_msg = await service.send_kickoff_turn(session, conversation_id=convo.id)
+            kickoff_msgs = await service.send_kickoff_turn(
+                session,
+                storage=storage,
+                tenant_id=claims.tenant_id,
+                user_id=user.id,
+                conversation_id=convo.id,
+            )
         except ProviderError as e:
             await session.rollback()
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"El proveedor rechazó la solicitud: {e}",
             ) from e
+        except WorkingCopyError as e:
+            await session.rollback()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
         except service.DatasetNotVisibleError as e:  # pragma: no cover - just verified
             await session.rollback()
             raise HTTPException(
@@ -158,7 +171,7 @@ async def create_conversation(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes acceso a esa conexión de IA.",
             ) from e
-        messages = [MessagePublic.model_validate(kickoff_msg)]
+        messages = [MessagePublic.model_validate(m) for m in kickoff_msgs]
 
     await session.commit()
     return ConversationDetail(
@@ -193,12 +206,19 @@ async def send_message(
     conversation_id: str,
     body: SendMessageRequest,
     session: AuthSessionDep,
-    _: CurrentUserDep,
+    user: CurrentUserDep,
+    claims: AccessClaimsDep,
+    storage: StorageDep,
 ) -> SendMessageResponse:
     cid = _parse_uuid_or_404(conversation_id, "Conversación")
     try:
-        user_msg, assistant_msg = await service.send_message(
-            session, conversation_id=cid, content=body.content
+        user_msg, assistant_msgs = await service.send_message(
+            session,
+            storage=storage,
+            tenant_id=claims.tenant_id,
+            user_id=user.id,
+            conversation_id=cid,
+            content=body.content,
         )
     except service.ConversationNotFoundError as e:
         raise HTTPException(
@@ -209,6 +229,8 @@ async def send_message(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Perdiste el acceso a la conexión de IA usada por esta conversación.",
         ) from e
+    except WorkingCopyError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except ProviderError as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -217,7 +239,68 @@ async def send_message(
     await session.commit()
     return SendMessageResponse(
         user_message=MessagePublic.model_validate(user_msg),
-        assistant_message=MessagePublic.model_validate(assistant_msg),
+        assistant_messages=[MessagePublic.model_validate(m) for m in assistant_msgs],
+    )
+
+
+@router.post(
+    "/conversations/{conversation_id}/pending-actions/{tool_call_id}/resolve",
+    response_model=SendMessageResponse,
+)
+async def resolve_pending_action(
+    conversation_id: str,
+    tool_call_id: str,
+    body: ResolvePendingActionRequest,
+    session: AuthSessionDep,
+    user: CurrentUserDep,
+    claims: AccessClaimsDep,
+    storage: StorageDep,
+) -> SendMessageResponse:
+    """Accept or reject a pending action proposed by the agent.
+
+    On accept: the matching transform runs against the user's working
+    copy, the result is fed back to the model, and the agent's next
+    turn (the "ok, here's what happened" message + visualizations)
+    lands in the response. On reject: a "user declined" tool_result
+    is fed back; the agent typically replies with a follow-up
+    question or an alternative."""
+    cid = _parse_uuid_or_404(conversation_id, "Conversación")
+    try:
+        follow_ups = await service.resolve_pending_action(
+            session,
+            storage=storage,
+            tenant_id=claims.tenant_id,
+            user_id=user.id,
+            conversation_id=cid,
+            message_id=_parse_uuid_or_404(body.message_id, "Mensaje"),
+            tool_call_id=tool_call_id,
+            accept=body.accept,
+        )
+    except service.PendingActionError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except service.ConversationNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Conversación no encontrada."
+        ) from e
+    except service.CredentialNotUsableError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Perdiste el acceso a la conexión de IA usada por esta conversación.",
+        ) from e
+    except WorkingCopyError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except ProviderError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"El proveedor rechazó la solicitud: {e}",
+        ) from e
+    await session.commit()
+    # There's no "user message" when resolving — the user clicked a
+    # button, not typed text. We return only the agent's follow-up
+    # turn(s) to be appended.
+    return SendMessageResponse(
+        user_message=None,
+        assistant_messages=[MessagePublic.model_validate(m) for m in follow_ups],
     )
 
 

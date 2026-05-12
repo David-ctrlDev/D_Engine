@@ -49,6 +49,19 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
+def _dummy_storage() -> Any:
+    """Stand-in ``LocalFileStorage`` for tests that don't exercise the
+    tool path. The chat stub never returns ``tool_calls``, so the
+    agent service never reaches the working-copy code that would
+    actually hit disk."""
+    from pathlib import Path
+    from tempfile import gettempdir
+
+    from app.data.storage import LocalFileStorage
+
+    return LocalFileStorage(Path(gettempdir()) / "dataprep-test-storage", max_bytes=1024)
+
+
 # ---------------------------------------------------------------------------
 # Workspace + dataset + credential fixture (in-test helper)
 # ---------------------------------------------------------------------------
@@ -307,6 +320,7 @@ def stub_chat_completion(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         base_url: str | None,
         model: str,
         messages: list[ChatMessage],
+        tools: Any = None,
     ) -> ChatCompletion:
         captured["provider"] = provider
         captured["api_key"] = api_key
@@ -351,8 +365,13 @@ async def test_send_message_happy_path(
     await session.commit()
     await set_request_context(session, user_id=owner_a_id, tenant_id=a_id)
 
-    user_msg, assistant_msg = await agent_service.send_message(
-        session, conversation_id=convo.id, content="¿Qué ves en mis datos?"
+    user_msg, assistant_msgs = await agent_service.send_message(
+        session,
+        storage=_dummy_storage(),
+        tenant_id=a_id,
+        user_id=owner_a_id,
+        conversation_id=convo.id,
+        content="¿Qué ves en mis datos?",
     )
     await session.commit()
     await set_request_context(session, user_id=owner_a_id, tenant_id=a_id)
@@ -392,7 +411,8 @@ async def test_send_message_happy_path(
     # Sanity: the agent received the *decrypted* key (the stub captured it).
     assert stub_chat_completion["api_key"] == "sk-test-not-real"
     assert user_msg.role == AgentMessageRole.user
-    assert assistant_msg.role == AgentMessageRole.assistant
+    assert len(assistant_msgs) == 1
+    assert assistant_msgs[0].role == AgentMessageRole.assistant
 
 
 # ===========================================================================
@@ -414,6 +434,7 @@ def stub_chat_completion_with_chips(monkeypatch: pytest.MonkeyPatch) -> dict[str
         base_url: str | None,
         model: str,
         messages: list[ChatMessage],
+        tools: Any = None,
     ) -> ChatCompletion:
         captured["messages"] = messages
         text = (
@@ -460,7 +481,14 @@ async def test_kickoff_turn_produces_assistant_with_chips(
     await session.commit()
     await set_request_context(session, user_id=owner_a_id, tenant_id=a_id)
 
-    kickoff = await agent_service.send_kickoff_turn(session, conversation_id=convo.id)
+    kickoffs = await agent_service.send_kickoff_turn(
+        session,
+        storage=_dummy_storage(),
+        tenant_id=a_id,
+        user_id=owner_a_id,
+        conversation_id=convo.id,
+    )
+    kickoff = kickoffs[0]
     await session.commit()
 
     # The trigger we sent the LLM is *not* persisted — only the

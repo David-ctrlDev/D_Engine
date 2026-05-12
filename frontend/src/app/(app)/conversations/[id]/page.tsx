@@ -30,6 +30,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { MessageMarkdown } from "@/components/agent/message-markdown";
+import { MessageVisuals } from "@/components/agent/message-visuals";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ApiError } from "@/lib/api";
@@ -65,13 +66,15 @@ export default function ConversationPage() {
     mutationFn: (content: string) => sendMessage(conversationId, content),
     onMutate: (content) => setPendingUser(content),
     onSuccess: (resp) => {
-      // Append both new messages to the cached detail without a refetch.
+      // Append the user message + every assistant turn the loop
+      // produced. ``user_message`` is null only on accept/reject
+      // paths (handled by the pending-action card), never here.
       qc.setQueryData<typeof data>(["conversation", conversationId], (prev) => {
         if (!prev) return prev;
-        return {
-          ...prev,
-          messages: [...prev.messages, resp.user_message, resp.assistant_message],
-        };
+        const appended: MessagePublic[] = [];
+        if (resp.user_message) appended.push(resp.user_message);
+        appended.push(...resp.assistant_messages);
+        return { ...prev, messages: [...prev.messages, ...appended] };
       });
       setPendingUser(null);
       setInput("");
@@ -230,6 +233,7 @@ export default function ConversationPage() {
                   role: "user",
                   content: pendingUser,
                   suggestions: null,
+                  visualizations: null,
                   token_usage: null,
                   created_at: new Date().toISOString(),
                 }}
@@ -317,6 +321,19 @@ function MessageBubble({
         ) : (
           <div className="space-y-1.5">
             <MessageMarkdown content={message.content} />
+          </div>
+        )}
+        {/* Inline charts / pending-action cards. Even though the agent
+           emitted them as part of THIS message, we render them
+           visually grouped with the bubble so the user reads them as
+           "what the agent showed me", not loose dashboards. */}
+        {!isUser && message.visualizations && message.visualizations.length > 0 && (
+          <div className="pt-1">
+            <MessageVisuals
+              visualizations={message.visualizations}
+              messageId={message.id}
+              conversationId={message.conversation_id}
+            />
           </div>
         )}
         {message.token_usage && (

@@ -8,6 +8,7 @@ Same conventions as the rest of the codebase:
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -72,6 +73,10 @@ class MessagePublic(BaseModel):
     # frontend renders them as buttons; clicking one sends the chip
     # text as the next user message.
     suggestions: list[str] | None = None
+    # Typed inline viz specs (histograms, before/after bars, pending-
+    # action cards). The frontend dispatches each entry's ``kind`` to
+    # a chart component. ``None`` for plain-text turns.
+    visualizations: list[dict[str, Any]] | None = None
     token_usage: dict[str, int] | None
     created_at: datetime
 
@@ -91,14 +96,33 @@ class SendMessageRequest(_StrictModel):
 
 
 class SendMessageResponse(BaseModel):
-    """The newly-persisted ``user`` + ``assistant`` pair.
+    """The newly-persisted user + assistant turn(s).
 
-    Returning both keeps the frontend cache update trivial — it
-    appends them to the local list without a separate fetch.
+    The agent loop can produce multiple assistant rows in one
+    user turn (e.g. one with a tool_use that ran ``inspect_column``,
+    then one with the diagnosis + intent chips). The frontend
+    appends them in order to the local transcript.
+
+    ``user_message`` is ``None`` when the response comes from a
+    button click (e.g. accepting a pending action) rather than a
+    typed message.
     """
 
-    user_message: MessagePublic
-    assistant_message: MessagePublic
+    user_message: MessagePublic | None
+    assistant_messages: list[MessagePublic]
+
+
+class ResolvePendingActionRequest(_StrictModel):
+    """Accept or reject a pending-action card the agent emitted.
+
+    ``message_id`` is the id of the assistant message that carries
+    the pending action; ``accept`` is the choice. The route uses the
+    URL's ``tool_call_id`` to find the specific action inside that
+    message (one assistant turn could propose more than one action,
+    each gets resolved individually)."""
+
+    message_id: str
+    accept: bool
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +155,7 @@ __all__ = [
     "ConversationListResponse",
     "ConversationPublic",
     "MessagePublic",
+    "ResolvePendingActionRequest",
     "SendMessageRequest",
     "SendMessageResponse",
     "UsableCredential",
