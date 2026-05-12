@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from app.agent.routes import router as agent_router
 from app.auth.routes import router as auth_router
 from app.config import settings
 from app.core.rate_limit import limiter
@@ -89,6 +90,7 @@ def create_app() -> FastAPI:
     app.include_router(datasets_router)
     app.include_router(workspace_router)
     app.include_router(llm_router)
+    app.include_router(agent_router)
     return app
 
 

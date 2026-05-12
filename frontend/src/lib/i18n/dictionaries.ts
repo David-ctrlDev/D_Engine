@@ -500,6 +500,51 @@ export const es = {
   "settings.ai.access.admins_only": "Solo admins",
   "settings.ai.access.all_members": "Todo el equipo",
   "settings.ai.access.specific_members": "Personas específicas",
+
+  // ----- Agent / Chat (slice G2.1) --------------------------------------
+  "agent.cta.button": "Hablar con el agente",
+  "agent.cta.tooltip": "Inicia una conversación con el agente sobre este dataset.",
+  "agent.start.title": "Iniciar conversación con el agente",
+  "agent.start.subtitle":
+    "El agente verá el esquema del dataset y el último análisis para responderte con contexto.",
+  "agent.start.credential_label": "¿Qué conexión de IA quieres usar?",
+  "agent.start.credential_placeholder": "Elige una conexión…",
+  "agent.start.no_credentials.title": "No tienes ninguna conexión disponible",
+  "agent.start.no_credentials.admin":
+    "Registra una en Conexiones de IA para empezar a usar el agente.",
+  "agent.start.no_credentials.member":
+    "Pídele a un administrador del workspace que te dé acceso a una conexión.",
+  "agent.start.no_credentials.cta": "Ir a Conexiones de IA",
+  "agent.start.model_label": "Modelo",
+  "agent.start.initial_message_label": "¿Quieres lanzar una pregunta inicial? (opcional)",
+  "agent.start.initial_message_placeholder":
+    "Ej: ¿Qué columnas tienen problemas de calidad?",
+  "agent.start.submit": "Empezar",
+  "agent.start.submitting": "Conectando…",
+  "agent.chat.title": "Conversación con el agente",
+  "agent.chat.subtitle_prefix": "Sobre el dataset",
+  "agent.chat.back": "Volver al dataset",
+  "agent.chat.empty.title": "Aún no has dicho nada",
+  "agent.chat.empty.body":
+    "Pregunta por la calidad de tus datos, pide un resumen de las columnas, o describe la limpieza que necesitas.",
+  "agent.chat.input_placeholder": "Escribe tu mensaje…",
+  "agent.chat.send": "Enviar",
+  "agent.chat.sending": "Pensando…",
+  "agent.chat.you": "Tú",
+  "agent.chat.agent": "Agente",
+  "agent.chat.tokens": "{total} tokens",
+  "agent.chat.load_failed": "No se pudo cargar la conversación.",
+  "agent.chat.send_failed": "El agente no pudo responder. Intenta de nuevo.",
+  "agent.chat.not_found": "Esta conversación no existe o no tienes acceso.",
+  "agent.chat.delete": "Eliminar conversación",
+  "agent.chat.confirm_delete":
+    "¿Eliminar esta conversación? Se borran todos los mensajes.",
+  "agent.chat.deleted": "Conversación eliminada.",
+  "agent.list.title": "Conversaciones",
+  "agent.list.empty": "Aún no has iniciado ninguna conversación sobre este dataset.",
+  "agent.list.untitled": "Conversación sin título",
+  "agent.list.with_provider": "con {provider}",
+  "nav.conversations": "Conversaciones",
 } as const;
 
 export type DictionaryKey = keyof typeof es;
@@ -964,6 +1009,51 @@ export const en: Record<DictionaryKey, string> = {
   "settings.ai.access.admins_only": "Admins only",
   "settings.ai.access.all_members": "Whole team",
   "settings.ai.access.specific_members": "Specific people",
+
+  // ----- Agent / Chat (slice G2.1) --------------------------------------
+  "agent.cta.button": "Talk to the agent",
+  "agent.cta.tooltip": "Start a conversation with the agent about this dataset.",
+  "agent.start.title": "Start a conversation with the agent",
+  "agent.start.subtitle":
+    "The agent will see the dataset schema and the latest profile to answer you in context.",
+  "agent.start.credential_label": "Which AI connection do you want to use?",
+  "agent.start.credential_placeholder": "Pick a connection…",
+  "agent.start.no_credentials.title": "You don't have any available connections",
+  "agent.start.no_credentials.admin":
+    "Register one in AI connections to start using the agent.",
+  "agent.start.no_credentials.member":
+    "Ask a workspace admin to grant you access to a connection.",
+  "agent.start.no_credentials.cta": "Go to AI connections",
+  "agent.start.model_label": "Model",
+  "agent.start.initial_message_label": "Want to ask an opening question? (optional)",
+  "agent.start.initial_message_placeholder":
+    "E.g. Which columns have data-quality issues?",
+  "agent.start.submit": "Start",
+  "agent.start.submitting": "Connecting…",
+  "agent.chat.title": "Conversation with the agent",
+  "agent.chat.subtitle_prefix": "About dataset",
+  "agent.chat.back": "Back to dataset",
+  "agent.chat.empty.title": "You haven't said anything yet",
+  "agent.chat.empty.body":
+    "Ask about data quality, request a column summary, or describe the cleaning you need.",
+  "agent.chat.input_placeholder": "Type your message…",
+  "agent.chat.send": "Send",
+  "agent.chat.sending": "Thinking…",
+  "agent.chat.you": "You",
+  "agent.chat.agent": "Agent",
+  "agent.chat.tokens": "{total} tokens",
+  "agent.chat.load_failed": "Couldn't load the conversation.",
+  "agent.chat.send_failed": "The agent couldn't reply. Try again.",
+  "agent.chat.not_found": "This conversation doesn't exist or you don't have access.",
+  "agent.chat.delete": "Delete conversation",
+  "agent.chat.confirm_delete":
+    "Delete this conversation? All messages will be removed.",
+  "agent.chat.deleted": "Conversation deleted.",
+  "agent.list.title": "Conversations",
+  "agent.list.empty": "You haven't started any conversations on this dataset yet.",
+  "agent.list.untitled": "Untitled conversation",
+  "agent.list.with_provider": "with {provider}",
+  "nav.conversations": "Conversations",
 };
 
 export const dictionaries = { es, en } as const;

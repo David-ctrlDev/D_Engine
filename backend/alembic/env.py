@@ -12,6 +12,7 @@ from logging.config import fileConfig
 from typing import TYPE_CHECKING
 
 from alembic import context
+from app.agent import models as _agent_models
 from app.auth import models
 from app.config import settings
 from app.data import models as _data_models
