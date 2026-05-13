@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import { AgentNextStep } from "@/components/agent/agent-next-step";
+import { CleanDataPanel } from "@/components/agent/clean-data-panel";
 import { ProfileSection } from "@/components/datasets/profile-section";
 import { ShareSection } from "@/components/datasets/share-section";
 import { Badge } from "@/components/ui/badge";
@@ -126,6 +127,10 @@ export default function DatasetDetailPage() {
 
       {/* Agent kickoff (slice G2.1 — agent-led) */}
       <AgentNextStep datasetId={data.id} />
+
+      {/* Working copy state — only renders when the agent has actually
+          done something. Shows row/col counts, ops history, sample table. */}
+      <CleanDataPanel datasetId={data.id} />
 
       {/* Sharing (slice F) */}
       {me.data && (

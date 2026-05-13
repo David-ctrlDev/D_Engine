@@ -77,8 +77,38 @@ class MessagePublic(BaseModel):
     # action cards). The frontend dispatches each entry's ``kind`` to
     # a chart component. ``None`` for plain-text turns.
     visualizations: list[dict[str, Any]] | None = None
+    # Names of tools the agent actually executed on this turn. The
+    # frontend renders them as small "✓ dedupe · fillna" chips under
+    # the agent label so the user has *visual proof* of what really
+    # ran (vs what the agent might claim in its text). Computed from
+    # the ``tool_payload`` JSONB column server-side.
+    executed_tools: list[str] = []
     token_usage: dict[str, int] | None
     created_at: datetime
+
+    @classmethod
+    def model_validate(cls, obj: Any, **kw: Any) -> MessagePublic:
+        # Derive ``executed_tools`` from the persisted ``tool_payload``
+        # blob before pydantic copies the rest of the fields. We can't
+        # use a SQLAlchemy hybrid_property because the blob shape lives
+        # in two places (the agent's tool_use blocks AND the internal
+        # tool_use_id results) — easier to compute here, where we own
+        # the projection.
+        names: list[str] = []
+        payload = getattr(obj, "tool_payload", None) or (
+            obj.get("tool_payload") if isinstance(obj, dict) else None
+        )
+        if isinstance(payload, dict):
+            calls = payload.get("tool_calls") or []
+            if isinstance(calls, list):
+                for c in calls:
+                    if isinstance(c, dict) and isinstance(c.get("name"), str):
+                        names.append(c["name"])
+        validated = super().model_validate(obj, **kw)
+        # Re-attach computed field — pydantic doesn't surface unknown
+        # attrs from the ORM row.
+        object.__setattr__(validated, "executed_tools", names)
+        return validated
 
 
 class ConversationDetail(BaseModel):

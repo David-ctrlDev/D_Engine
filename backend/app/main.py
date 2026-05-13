@@ -31,6 +31,7 @@ from app.data.routes import datasets_router, sources_router, workspace_router
 from app.llm.routes import router as llm_router
 from app.logging_config import configure_logging
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.transforms.routes import router as transforms_router
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(workspace_router)
     app.include_router(llm_router)
     app.include_router(agent_router)
+    app.include_router(transforms_router)
     return app
 
 

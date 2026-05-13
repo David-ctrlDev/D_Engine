@@ -134,6 +134,13 @@ export interface MessagePublic {
    * ``null`` for plain-text turns.
    */
   visualizations: Visualization[] | null;
+  /**
+   * Names of tools the agent actually executed on this turn — the
+   * server's ground truth of what really ran (not what the agent
+   * might claim in its text). Empty means "nothing ran, this is
+   * a pure text turn".
+   */
+  executed_tools: string[];
   token_usage: { prompt: number; completion: number; total: number } | null;
   created_at: string;
 }

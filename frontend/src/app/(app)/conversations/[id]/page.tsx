@@ -234,6 +234,7 @@ export default function ConversationPage() {
                   content: pendingUser,
                   suggestions: null,
                   visualizations: null,
+                  executed_tools: [],
                   token_usage: null,
                   created_at: new Date().toISOString(),
                 }}
@@ -310,8 +311,20 @@ function MessageBubble({
             : "bg-muted text-foreground",
         )}
       >
-        <div className="text-xs font-medium opacity-70">
-          {isUser ? t("agent.chat.you") : t("agent.chat.agent")}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium opacity-70">
+            {isUser ? t("agent.chat.you") : t("agent.chat.agent")}
+          </span>
+          {/*
+            Ground-truth badge — shows the tools that ACTUALLY ran on
+            this turn (from the persisted ``tool_payload``, not from
+            the agent's text). The honest signal: if the agent talks
+            about cleaning duplicates but this badge is empty, nothing
+            was cleaned.
+          */}
+          {!isUser && message.executed_tools && message.executed_tools.length > 0 && (
+            <ExecutedToolsBadge tools={message.executed_tools} />
+          )}
         </div>
         {/* Agent messages render as markdown (the models reach for **bold**,
            bullets, code fences by default). User turns stay verbatim — the
@@ -367,5 +380,47 @@ function MessageBubble({
         </div>
       )}
     </div>
+  );
+}
+
+// Per-tool human label used in the executed-tools badge. Keeps the
+// agent's internal names (``dedupe`` / ``fillna`` / etc.) out of the
+// user-facing chip — they read "Limpieza de duplicados", "Nulos
+// rellenados", etc.
+const TOOL_LABELS: Record<string, string> = {
+  inspect_column: "Análisis de columna",
+  preview_duplicates: "Búsqueda de duplicados",
+  dedupe: "Eliminación de duplicados",
+  fillna: "Tratamiento de nulos",
+  normalize_text: "Normalización de texto",
+  parse_dates: "Conversión de fechas",
+  normalize_numeric: "Conversión a números",
+};
+
+function ExecutedToolsBadge({ tools }: { tools: string[] }) {
+  // Show each tool name with a count when it ran more than once
+  // (e.g. inspect_column on multiple columns counts as one chip with
+  // ``×N``). Order preserved from the agent's emit order.
+  const counts = new Map<string, number>();
+  for (const t of tools) counts.set(t, (counts.get(t) ?? 0) + 1);
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      <span className="text-[10px] font-medium uppercase tracking-wide opacity-60">
+        Ejecutado:
+      </span>
+      {Array.from(counts.entries()).map(([name, count]) => (
+        <span
+          key={name}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+            "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+          )}
+        >
+          <span aria-hidden>✓</span>
+          {TOOL_LABELS[name] ?? name}
+          {count > 1 && <span className="opacity-70">×{count}</span>}
+        </span>
+      ))}
+    </span>
   );
 }
