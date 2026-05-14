@@ -17,6 +17,7 @@ turn. Without that context the agent has nothing useful to say —
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -31,6 +32,8 @@ from app.data.models import Dataset, DataSource, ProfileRun, ProfileRunStatus
 from app.llm.models import LlmCredential
 from app.transforms import service as transforms_service
 from app.transforms.dispatcher import OperationError, OperationResult
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -130,9 +133,24 @@ Solo pregunta cuando:
 
 REGLA #2 — EJECUTA EL PLAN COMPLETO EN UN SOLO TURNO
 
-Cuando el usuario te da contexto, ejecuta TODO el pipeline necesario en este
-mismo turno. Llama las tools en secuencia. No te detengas a preguntar entre
-pasos. Cada herramienta tiene un default sensato, úsalo.
+Cuando el usuario te da contexto, **TU PRIMERA ACCIÓN DEBE SER LLAMAR UNA
+TOOL**. No empieces describiendo. No empieces preguntando. Llama tools.
+
+- Empieza con ``inspect_column`` en 2-3 columnas con problemas conocidos
+  según el análisis de calidad (las que tienen muchos nulos o tipos
+  sospechosos). El usuario verá los gráficos aparecer.
+- Después llama las tools de mutación EN SECUENCIA — ``dedupe`` si hay
+  columnas identificadoras únicas; ``normalize_text`` en columnas de
+  texto sucio; ``parse_dates`` si hay fechas como texto;
+  ``normalize_numeric`` si hay números como texto; ``fillna`` al final
+  con strategy='auto' para cerrar nulos.
+- SOLO después de haber llamado al menos 3-4 tools, escribe tu resumen
+  final.
+
+Una respuesta tuya **sin** ninguna llamada a tool en este punto del
+flujo es un BUG — el usuario va a ver el badge "Ejecutado:" vacío y va
+a perder confianza. Si dudas entre actuar o preguntar, ACTÚA. Cada
+herramienta tiene un default sensato — úsalo y reporta el resultado.
 
 Pipeline típico para "entrenar un modelo":
 1. ``inspect_column`` en las columnas con más nulos o más sospechosas
@@ -616,8 +634,17 @@ async def _run_agent_loop(
     use_tools = credential.provider.value in _TOOL_USE_PROVIDERS
     tools_param = TOOLS if use_tools else None
     produced: list[AgentMessage] = []
+    logger.info(
+        "agent_loop start conversation=%s provider=%s model=%s tools_enabled=%s tools_count=%d history_len=%d",
+        conversation.id,
+        credential.provider.value,
+        conversation.model,
+        use_tools,
+        len(tools_param) if tools_param else 0,
+        len(working_messages),
+    )
 
-    for _ in range(_MAX_TOOL_ITERATIONS):
+    for iteration in range(_MAX_TOOL_ITERATIONS):
         try:
             completion = await chat_completion(
                 provider=credential.provider,
@@ -633,6 +660,17 @@ async def _run_agent_loop(
 
         cleaned_text, suggestions = _parse_suggestions(completion.text)
         tool_calls = list(completion.tool_calls)
+        # Per-iteration trace: lets us check from the server log whether
+        # the model is calling tools or just yapping. The user sees the
+        # same signal as the executed_tools badge in the chat — this log
+        # is the developer view of the same fact.
+        logger.info(
+            "agent_loop iter=%d stop=%s text_len=%d tool_calls=%s",
+            iteration,
+            completion.stop_reason,
+            len(completion.text or ""),
+            [tc.name for tc in tool_calls],
+        )
 
         # Separate pending actions (user must approve) from auto-run
         # tools (we run them in this loop iteration).
