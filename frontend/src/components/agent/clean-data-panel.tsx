@@ -1,29 +1,48 @@
 "use client";
 
 /**
- * "Datos limpios (versión actual)" — surfaces the user's working copy
- * on the dataset detail page.
+ * "Datos limpios (versión actual)" — the working-copy surface on the
+ * dataset detail page.
  *
- * The card shows the live state of the agent's transformations:
- * row/column counts, last-modified, plus a "Ver tabla" toggle that
- * loads a sample of the rows. Operations history (what the agent ran,
- * in order) lives in its own collapsible section so the user can
- * audit every change.
+ * Three sections, stacked:
  *
- * Renders nothing when there's no working copy yet — the agent hasn't
- * touched the dataset.
+ *   1. **Quick stats + actions** — rows / columns / op count + a
+ *      "Volver al original" button that wipes every transformation.
+ *   2. **Historial de cambios** — every op the agent ran, newest
+ *      first, with rows-delta badges and per-row [Deshacer] buttons.
+ *      Expanded by default so the user has an instant view of "what
+ *      did the agent do to my data?".
+ *   3. **Vista previa de la tabla** — collapsible sample of the
+ *      current parquet snapshot. Off by default to keep the page
+ *      light; the user clicks "Ver tabla" when they want it.
+ *
+ * Renders nothing when no working copy exists yet — the agent
+ * hasn't done anything and the "Comenzar con la IA" CTA is the
+ * obvious next step.
  */
 
-import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Loader2, Sparkles, Table2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  RotateCcw,
+  Sparkles,
+  Table2,
+  Undo2,
+} from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ApiError } from "@/lib/api";
 import {
   getWorkingCopy,
   getWorkingCopySample,
   listWorkingCopyOperations,
+  resetWorkingCopy,
+  undoOperation,
 } from "@/lib/working-copy-actions";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +60,8 @@ const OP_LABELS: Record<string, string> = {
 };
 
 export function CleanDataPanel({ datasetId }: { datasetId: string }) {
+  const qc = useQueryClient();
+
   const wcQuery = useQuery({
     queryKey: ["working-copy", datasetId],
     queryFn: () => getWorkingCopy(datasetId),
@@ -57,7 +78,42 @@ export function CleanDataPanel({ datasetId }: { datasetId: string }) {
   });
 
   const [tableOpen, setTableOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
+
+  function refreshAll() {
+    qc.invalidateQueries({ queryKey: ["working-copy", datasetId] });
+    qc.invalidateQueries({ queryKey: ["working-copy-ops", datasetId] });
+    qc.invalidateQueries({ queryKey: ["working-copy-sample", datasetId] });
+  }
+
+  const undoMut = useMutation({
+    mutationFn: (opId: string) => undoOperation(datasetId, opId),
+    onSuccess: (resp) => {
+      toast.success(
+        resp.undone_count === 1
+          ? "Cambio deshecho."
+          : `Deshechos ${resp.undone_count} cambios.`,
+      );
+      refreshAll();
+    },
+    onError: (e) => {
+      toast.error(e instanceof ApiError ? e.message : "No se pudo deshacer.");
+    },
+  });
+
+  const resetMut = useMutation({
+    mutationFn: () => resetWorkingCopy(datasetId),
+    onSuccess: (resp) => {
+      toast.success(
+        resp.undone_count === 0
+          ? "El dataset ya estaba en su versión original."
+          : `Volví a la versión original (deshice ${resp.undone_count} cambios).`,
+      );
+      refreshAll();
+    },
+    onError: (e) => {
+      toast.error(e instanceof ApiError ? e.message : "No se pudo restaurar.");
+    },
+  });
 
   if (wcQuery.isLoading) {
     return (
@@ -69,12 +125,12 @@ export function CleanDataPanel({ datasetId }: { datasetId: string }) {
     );
   }
 
-  // No working copy yet — the agent hasn't done anything. Stay quiet
-  // (the "Comenzar con la IA" card already invites the user).
+  // No working copy yet — the agent hasn't done anything.
   if (!wcQuery.data) return null;
 
   const wc = wcQuery.data;
-  const operations = (opsQuery.data?.operations ?? []).filter((o) => !o.undone_at);
+  const allOps = opsQuery.data?.operations ?? [];
+  const activeOps = allOps.filter((o) => !o.undone_at);
   const sample = sampleQuery.data;
 
   return (
@@ -87,18 +143,41 @@ export function CleanDataPanel({ datasetId }: { datasetId: string }) {
           </CardTitle>
           <p className="text-muted-foreground text-xs">
             Esta es la versión sobre la que está trabajando el agente. El
-            dataset original sigue intacto.
+            dataset original sigue intacto — siempre puedes volver a él.
           </p>
         </div>
+        {activeOps.length > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Esto deshace TODOS los cambios y vuelve al dataset original. ¿Continuar?",
+                )
+              ) {
+                resetMut.mutate();
+              }
+            }}
+            disabled={resetMut.isPending}
+          >
+            {resetMut.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="size-3.5" />
+            )}
+            Volver al original
+          </Button>
+        )}
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         {/* Quick stats */}
-        <div className="flex flex-wrap gap-4 text-sm">
+        <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
           <Stat label="Filas" value={wc.row_count?.toLocaleString() ?? "—"} />
           <Stat label="Columnas" value={wc.column_count?.toLocaleString() ?? "—"} />
           <Stat
-            label="Cambios aplicados"
-            value={operations.length.toLocaleString()}
+            label="Cambios activos"
+            value={activeOps.length.toLocaleString()}
           />
           <Stat
             label="Última actualización"
@@ -106,7 +185,89 @@ export function CleanDataPanel({ datasetId }: { datasetId: string }) {
           />
         </div>
 
-        {/* Show table toggle */}
+        {/* History — visible by default. The "what's happening" view. */}
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide opacity-70">
+            Historial de cambios
+          </h3>
+          {allOps.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              Aún no se ha aplicado ningún cambio.
+            </p>
+          ) : (
+            <ul className="divide-border/60 divide-y rounded-md border bg-background">
+              {allOps.map((op) => {
+                const delta =
+                  op.rows_before != null && op.rows_after != null
+                    ? op.rows_after - op.rows_before
+                    : null;
+                const isUndone = op.undone_at != null;
+                return (
+                  <li
+                    key={op.id}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2 text-sm",
+                      isUndone && "opacity-50",
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div
+                        className={cn(
+                          "font-medium",
+                          isUndone && "line-through decoration-muted-foreground",
+                        )}
+                      >
+                        {OP_LABELS[op.op] ?? op.op}
+                      </div>
+                      <div className="text-muted-foreground text-xs">
+                        {new Date(op.created_at).toLocaleString()}
+                        {isUndone && " · deshecho"}
+                      </div>
+                    </div>
+                    {delta != null && (
+                      <span
+                        className={cn(
+                          "text-xs tabular-nums",
+                          isUndone
+                            ? "text-muted-foreground"
+                            : delta === 0
+                              ? "text-muted-foreground"
+                              : delta < 0
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-amber-600 dark:text-amber-400",
+                        )}
+                      >
+                        {delta > 0 ? "+" : ""}
+                        {delta} filas
+                      </span>
+                    )}
+                    {!isUndone && (
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "Esto deshace este cambio y todos los posteriores. ¿Continuar?",
+                            )
+                          ) {
+                            undoMut.mutate(op.id);
+                          }
+                        }}
+                        disabled={undoMut.isPending}
+                      >
+                        <Undo2 className="size-3" />
+                        Deshacer
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        {/* Sample table — collapsible */}
         <div>
           <Button
             size="sm"
@@ -172,64 +333,6 @@ export function CleanDataPanel({ datasetId }: { datasetId: string }) {
                   {sample.row_count.toLocaleString()} filas.
                 </div>
               </div>
-            )}
-          </div>
-        )}
-
-        {/* Operations history */}
-        {operations.length > 0 && (
-          <div>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setHistoryOpen((v) => !v)}
-            >
-              {historyOpen ? (
-                <ChevronDown className="size-3.5" />
-              ) : (
-                <ChevronRight className="size-3.5" />
-              )}
-              Ver historial de cambios
-            </Button>
-            {historyOpen && (
-              <ul className="divide-border/60 mt-2 divide-y rounded-md border">
-                {operations.map((op) => {
-                  const delta =
-                    op.rows_before != null && op.rows_after != null
-                      ? op.rows_after - op.rows_before
-                      : null;
-                  return (
-                    <li
-                      key={op.id}
-                      className="flex items-center justify-between px-3 py-2 text-xs"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium">
-                          {OP_LABELS[op.op] ?? op.op}
-                        </div>
-                        <div className="text-muted-foreground">
-                          {new Date(op.created_at).toLocaleString()}
-                        </div>
-                      </div>
-                      {delta != null && (
-                        <span
-                          className={cn(
-                            "tabular-nums",
-                            delta === 0
-                              ? "text-muted-foreground"
-                              : delta < 0
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-amber-600 dark:text-amber-400",
-                          )}
-                        >
-                          {delta > 0 ? "+" : ""}
-                          {delta} filas
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
             )}
           </div>
         )}

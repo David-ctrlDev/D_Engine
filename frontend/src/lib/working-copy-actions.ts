@@ -51,3 +51,34 @@ export async function listWorkingCopyOperations(
     throw e;
   }
 }
+
+export interface UndoResponse {
+  working_copy: WorkingCopySummary;
+  undone_count: number;
+}
+
+/**
+ * Roll the working copy back to *before* the given operation. Every
+ * later operation also gets stamped as undone — you can't keep step
+ * 3 if you reverted step 2.
+ */
+export async function undoOperation(
+  datasetId: string,
+  operationId: string,
+): Promise<UndoResponse> {
+  return api.post<UndoResponse>(
+    `/api/v1/datasets/${datasetId}/working-copy/operations/${operationId}/undo`,
+  );
+}
+
+/**
+ * Discard every transformation, restoring the working copy to the
+ * original CSV. The journal stays for the audit trail.
+ */
+export async function resetWorkingCopy(
+  datasetId: string,
+): Promise<UndoResponse> {
+  return api.post<UndoResponse>(
+    `/api/v1/datasets/${datasetId}/working-copy/reset`,
+  );
+}

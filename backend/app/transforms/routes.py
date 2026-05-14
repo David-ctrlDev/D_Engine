@@ -35,6 +35,7 @@ from sqlalchemy import desc, select
 
 from app.auth.dependencies import AuthSessionDep, CurrentUserDep
 from app.data.deps import StorageDep
+from app.transforms import service as transforms_service
 from app.transforms.models import DatasetOperation, DatasetWorkingCopy
 
 router = APIRouter(prefix="/api/v1/datasets", tags=["working-copy"])
@@ -201,6 +202,83 @@ async def list_working_copy_operations(
     )
     return WorkingCopyOperationsResponse(
         operations=[WorkingCopyOperationPublic.model_validate(r) for r in rows]
+    )
+
+
+# ---------------------------------------------------------------------------
+# Undo / reset
+# ---------------------------------------------------------------------------
+
+
+class UndoResponse(BaseModel):
+    """What the UI gets back after an undo/reset call.
+
+    ``working_copy`` is the post-rollback state; ``undone_count`` is
+    how many operations were affected (1 for a single-step undo, N
+    for "undo from step K onwards", everything-still-active for a
+    full reset)."""
+
+    working_copy: WorkingCopySummary
+    undone_count: int
+
+
+@router.post(
+    "/{dataset_id}/working-copy/operations/{operation_id}/undo",
+    response_model=UndoResponse,
+)
+async def undo_working_copy_operation(
+    dataset_id: str,
+    operation_id: str,
+    session: AuthSessionDep,
+    user: CurrentUserDep,
+    storage: StorageDep,
+) -> UndoResponse:
+    """Roll the working copy back to the state right *before* this
+    operation. Every later operation is also marked undone — you
+    can't keep step 3 if you rolled back step 2."""
+    did = _parse_uuid_or_404(dataset_id, "Dataset")
+    oid = _parse_uuid_or_404(operation_id, "Operación")
+    wc = await _find_working_copy_for_user(session, did, user.id)
+    try:
+        updated, count = await transforms_service.undo_operation(
+            session,
+            storage=storage,
+            working_copy=wc,
+            operation_id=oid,
+        )
+    except transforms_service.WorkingCopyError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    await session.commit()
+    return UndoResponse(
+        working_copy=WorkingCopySummary.model_validate(updated),
+        undone_count=count,
+    )
+
+
+@router.post(
+    "/{dataset_id}/working-copy/reset",
+    response_model=UndoResponse,
+)
+async def reset_working_copy(
+    dataset_id: str,
+    session: AuthSessionDep,
+    user: CurrentUserDep,
+    storage: StorageDep,
+) -> UndoResponse:
+    """Discard every transformation, restoring the working copy to
+    the original CSV. Journal rows stay (with ``undone_at`` stamped)
+    for the audit trail."""
+    did = _parse_uuid_or_404(dataset_id, "Dataset")
+    wc = await _find_working_copy_for_user(session, did, user.id)
+    updated, count = await transforms_service.reset_working_copy(
+        session, storage=storage, working_copy=wc
+    )
+    await session.commit()
+    return UndoResponse(
+        working_copy=WorkingCopySummary.model_validate(updated),
+        undone_count=count,
     )
 
 

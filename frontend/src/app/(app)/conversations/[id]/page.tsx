@@ -76,6 +76,16 @@ export default function ConversationPage() {
         appended.push(...resp.assistant_messages);
         return { ...prev, messages: [...prev.messages, ...appended] };
       });
+      // The agent may have written to the working copy (dedupe, fillna,
+      // etc.). Invalidate the working-copy + ops queries so the
+      // "Datos limpios" panel on the dataset page reflects the new
+      // state without a manual refresh.
+      const datasetId = data?.conversation.dataset_id;
+      if (datasetId) {
+        qc.invalidateQueries({ queryKey: ["working-copy", datasetId] });
+        qc.invalidateQueries({ queryKey: ["working-copy-ops", datasetId] });
+        qc.invalidateQueries({ queryKey: ["working-copy-sample", datasetId] });
+      }
       setPendingUser(null);
       setInput("");
     },

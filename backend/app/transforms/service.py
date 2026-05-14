@@ -22,6 +22,7 @@ read back ids; the **caller** commits. Same convention as
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
@@ -223,8 +224,117 @@ async def run_operation(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Undo / reset
+# ---------------------------------------------------------------------------
+
+
+async def undo_operation(
+    session: AsyncSession,
+    *,
+    storage: LocalFileStorage,
+    working_copy: DatasetWorkingCopy,
+    operation_id: UUID,
+) -> tuple[DatasetWorkingCopy, int]:
+    """Roll the working copy back to the state *before* ``operation_id``.
+
+    Every operation later than the target (and the target itself) gets
+    its ``undone_at`` stamped. The working copy's ``snapshot_path``
+    moves to the target operation's ``snapshot_before_path`` so the
+    next read sees the pre-op state. Returns the updated working copy
+    plus the count of operations marked undone.
+    """
+    op = (
+        await session.execute(
+            select(DatasetOperation).where(
+                DatasetOperation.id == operation_id,
+                DatasetOperation.working_copy_id == working_copy.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if op is None:
+        raise WorkingCopyError("No encontré esa operación en el historial.")
+    if op.undone_at is not None:
+        raise WorkingCopyError("Esa operación ya estaba deshecha.")
+
+    # Mark this op + every later (still-active) op as undone. We
+    # stamp from oldest to newest so the audit trail keeps a sensible
+    # order even though they share the same timestamp.
+    later = (
+        (
+            await session.execute(
+                select(DatasetOperation)
+                .where(
+                    DatasetOperation.working_copy_id == working_copy.id,
+                    DatasetOperation.created_at >= op.created_at,
+                    DatasetOperation.undone_at.is_(None),
+                )
+                .order_by(DatasetOperation.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    now = datetime.now(UTC)
+    for entry in later:
+        entry.undone_at = now
+
+    # Restore the working copy pointer to the *before* snapshot of the
+    # target operation. Re-read the parquet to refresh the row count.
+    working_copy.snapshot_path = op.snapshot_before_path
+    frame = _read_snapshot(storage, op.snapshot_before_path)
+    working_copy.row_count = frame.height
+    working_copy.column_count = frame.width
+    await session.flush()
+    return working_copy, len(later)
+
+
+async def reset_working_copy(
+    session: AsyncSession,
+    *,
+    storage: LocalFileStorage,
+    working_copy: DatasetWorkingCopy,
+) -> tuple[DatasetWorkingCopy, int]:
+    """Undo every operation, restoring the working copy to v0.
+
+    Effectively a "rollback to the original CSV" for the user. The
+    journal rows stay so we still have an audit trail of what was
+    tried; they just all get ``undone_at`` stamped.
+    """
+    active = (
+        (
+            await session.execute(
+                select(DatasetOperation)
+                .where(
+                    DatasetOperation.working_copy_id == working_copy.id,
+                    DatasetOperation.undone_at.is_(None),
+                )
+                .order_by(DatasetOperation.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not active:
+        return working_copy, 0
+    # The earliest active op's ``snapshot_before_path`` is the v0
+    # snapshot — every subsequent op chained off the previous one.
+    v0_path = active[0].snapshot_before_path
+    now = datetime.now(UTC)
+    for entry in active:
+        entry.undone_at = now
+    working_copy.snapshot_path = v0_path
+    frame = _read_snapshot(storage, v0_path)
+    working_copy.row_count = frame.height
+    working_copy.column_count = frame.width
+    await session.flush()
+    return working_copy, len(active)
+
+
 __all__ = [
     "WorkingCopyError",
     "get_or_create_working_copy",
+    "reset_working_copy",
     "run_operation",
+    "undo_operation",
 ]
