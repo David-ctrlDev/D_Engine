@@ -46,13 +46,15 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "inspect_column",
         "description": (
-            "Mira el contenido de una columna: distribución de valores, "
-            "estadísticos básicos, porcentaje de nulos. Llámala cuando "
-            "necesites entender los datos de una columna antes de "
-            "transformarla. El resultado se muestra automáticamente al "
-            "usuario como gráfico inline (histograma para numéricas, "
-            "barras horizontales de valores más frecuentes para texto, "
-            "donut con % de nulos)."
+            "USA ESTA TOOL para mirar el contenido de una columna del "
+            "dataset. Devuelve la distribución de valores, estadísticos "
+            "básicos y el porcentaje de nulos. El resultado se renderiza "
+            "automáticamente como un gráfico que el usuario ve inline "
+            "(histograma para numéricas, barras horizontales para "
+            "texto, donut con el % de nulos). **Llámala al inicio de "
+            "casi cualquier análisis** — es la forma de ver qué hay sin "
+            "tener que pedirle nada al usuario. Llamarla varias veces, "
+            "una por columna interesante, es lo esperado."
         ),
         "input_schema": {
             "type": "object",
@@ -89,10 +91,13 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "dedupe",
         "description": (
-            "Elimina filas duplicadas según una o varias columnas. "
-            "Ejecuta directo — el original del dataset queda intacto en "
-            "la copia de trabajo del usuario y el cambio queda en el "
-            "journal para que pueda deshacerlo si quiere."
+            "EJECUTA la eliminación de filas duplicadas según una o "
+            "varias columnas. Esta tool corre la operación real — no "
+            "es una propuesta, no requiere aprobación. El original "
+            "queda intacto en la copia de trabajo del usuario y el "
+            "cambio queda en el journal por si quiere deshacerlo. "
+            "Llámala apenas detectes una columna con identidad clara "
+            "(email, id, customer_id, etc.)."
         ),
         "input_schema": {
             "type": "object",
@@ -127,11 +132,14 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "fillna",
         "description": (
-            "Rellena valores nulos / faltantes. Cuando omites 'columns' "
-            "actúa sobre todas las que tienen nulos. ``strategy='auto'`` "
-            "es lo más común: mediana para numéricas, moda para texto. "
-            "Solo usa ``strategy='drop_row'`` si los nulos son tantos que "
-            "imputar arruinaría el análisis (típicamente < 5% del dataset)."
+            "EJECUTA el relleno de valores nulos / faltantes. Cuando "
+            "omites 'columns' actúa sobre todas las que tienen nulos — "
+            "que es lo más común. ``strategy='auto'`` (default) es lo "
+            "que vas a querer casi siempre: mediana para numéricas, "
+            "moda para texto. Solo usa ``strategy='drop_row'`` si los "
+            "nulos son tantos que imputar arruinaría el análisis. "
+            "Llámala cerca del final del pipeline, después de que las "
+            "demás transformaciones hayan ocurrido."
         ),
         "input_schema": {
             "type": "object",
@@ -170,10 +178,11 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "normalize_text",
         "description": (
-            "Limpia variantes de texto: casing inconsistente, espacios "
-            "extra, acentos. Default sensible: 'title' case + strip + "
-            "collapse_spaces. Llámala cuando una columna mezcla 'España' / "
-            "'españa' / 'ESPAÑA', o cuando hay espacios sueltos."
+            "EJECUTA la limpieza de variantes de texto: casing "
+            "inconsistente, espacios extra, acentos. Default sensible: "
+            "'title' case + strip + collapse_spaces. Llámala apenas "
+            "veas columnas con 'España'/'españa'/'ESPAÑA' o con "
+            "espacios sueltos — es seguro y rápido."
         ),
         "input_schema": {
             "type": "object",
@@ -205,9 +214,11 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "parse_dates",
         "description": (
-            "Convierte columnas de texto con fechas en formato heterogéneo "
-            "a datetime tipado. Prueba varios formatos comunes en orden y "
-            "se queda con el que más filas reconozca."
+            "EJECUTA la conversión de columnas de texto con fechas a "
+            "datetime tipado. Prueba varios formatos comunes en orden y "
+            "se queda con el que más filas reconozca. Llámala apenas "
+            "veas una columna que parezca fecha pero esté tipada como "
+            "texto (algo como 'fecha_registro', 'created_at', etc.)."
         ),
         "input_schema": {
             "type": "object",
@@ -233,10 +244,10 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "normalize_numeric",
         "description": (
-            "Convierte strings como '1,234.56' / '$ 1.200' / '45%' a "
-            "números reales. Detecta el separador decimal automáticamente. "
-            "Llámala cuando una columna debería ser numérica pero llegó "
-            "como texto con símbolos."
+            "EJECUTA la conversión de strings como '1,234.56' / '$ 1.200' / "
+            "'45%' a números reales. Detecta el separador decimal "
+            "automáticamente. Llámala apenas veas una columna que debería "
+            "ser numérica pero llegó como texto con símbolos."
         ),
         "input_schema": {
             "type": "object",

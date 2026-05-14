@@ -154,6 +154,7 @@ async def _chat_anthropic(
     model: str,
     messages: list[ChatMessage],
     tools: list[dict[str, Any]] | None = None,
+    tool_choice: dict[str, Any] | None = None,
 ) -> ChatCompletion:
     """Anthropic separates the system prompt from the message list.
 
@@ -161,6 +162,13 @@ async def _chat_anthropic(
     instead of (or alongside) text. We pass the blocks back as
     :class:`ToolCall` instances and let the agent service decide what
     to run.
+
+    ``tool_choice`` follows Anthropic's wire format:
+      * ``{"type": "auto"}`` — model decides (default when omitted).
+      * ``{"type": "any"}`` — model MUST use one of the available tools.
+        We use this to break the agent out of "I'll just describe what
+        I'll do" mode on the first iteration of a follow-up turn.
+      * ``{"type": "tool", "name": "..."}`` — force a specific tool.
     """
     system_text = "\n\n".join(m.content for m in messages if m.role == "system")
     payload: dict[str, Any] = {
@@ -172,6 +180,8 @@ async def _chat_anthropic(
         payload["system"] = system_text
     if tools:
         payload["tools"] = tools
+    if tool_choice:
+        payload["tool_choice"] = tool_choice
     async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT) as client:
         try:
             r = await client.post(
@@ -367,6 +377,7 @@ async def chat_completion(
     model: str,
     messages: list[ChatMessage],
     tools: list[dict[str, Any]] | None = None,
+    tool_choice: dict[str, Any] | None = None,
 ) -> ChatCompletion:
     """Dispatch to the per-provider implementation.
 
@@ -380,7 +391,13 @@ async def chat_completion(
     Ollama OpenAI-compatible tools on recent models).
     """
     if provider is LlmProviderKind.anthropic:
-        return await _chat_anthropic(api_key=api_key, model=model, messages=messages, tools=tools)
+        return await _chat_anthropic(
+            api_key=api_key,
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+        )
     if provider is LlmProviderKind.openai:
         return await _chat_openai(api_key=api_key, model=model, messages=messages)
     if provider is LlmProviderKind.google:

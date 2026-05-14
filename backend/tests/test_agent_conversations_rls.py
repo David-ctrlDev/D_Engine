@@ -321,6 +321,7 @@ def stub_chat_completion(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         model: str,
         messages: list[ChatMessage],
         tools: Any = None,
+        tool_choice: Any = None,
     ) -> ChatCompletion:
         captured["provider"] = provider
         captured["api_key"] = api_key
@@ -435,6 +436,7 @@ def stub_chat_completion_with_chips(monkeypatch: pytest.MonkeyPatch) -> dict[str
         model: str,
         messages: list[ChatMessage],
         tools: Any = None,
+        tool_choice: Any = None,
     ) -> ChatCompletion:
         captured["messages"] = messages
         text = (

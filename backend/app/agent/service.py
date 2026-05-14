@@ -627,24 +627,39 @@ async def _run_agent_loop(
     credential: LlmCredential,
     api_key: str,
     working_messages: list[ChatMessage],
+    force_first_tool_call: bool = False,
 ) -> list[AgentMessage]:
     """Drive the assistant until it stops calling tools or asks for
     approval. Persists every assistant turn (and internal tool_result
-    rows) along the way."""
+    rows) along the way.
+
+    ``force_first_tool_call`` flips ``tool_choice`` to ``any`` on the
+    *first* iteration so the model can't open with a chatty "voy a
+    hacer X" — it has to actually call a tool. After the first call
+    we drop back to ``auto`` so the model can decide when it's
+    finished and write a final answer.
+    """
     use_tools = credential.provider.value in _TOOL_USE_PROVIDERS
     tools_param = TOOLS if use_tools else None
     produced: list[AgentMessage] = []
     logger.info(
-        "agent_loop start conversation=%s provider=%s model=%s tools_enabled=%s tools_count=%d history_len=%d",
+        "agent_loop start conversation=%s provider=%s model=%s tools_enabled=%s tools_count=%d history_len=%d force_first=%s",
         conversation.id,
         credential.provider.value,
         conversation.model,
         use_tools,
         len(tools_param) if tools_param else 0,
         len(working_messages),
+        force_first_tool_call,
     )
 
     for iteration in range(_MAX_TOOL_ITERATIONS):
+        # Force a tool call only on the first iteration of a follow-up
+        # turn. Subsequent iterations use ``auto`` so the model can
+        # decide it's done and write the final summary.
+        tool_choice: dict[str, Any] | None = None
+        if use_tools and force_first_tool_call and iteration == 0:
+            tool_choice = {"type": "any"}
         try:
             completion = await chat_completion(
                 provider=credential.provider,
@@ -653,6 +668,7 @@ async def _run_agent_loop(
                 model=conversation.model,
                 messages=working_messages,
                 tools=tools_param,
+                tool_choice=tool_choice,
             )
         except ProviderError:
             await session.rollback()
@@ -807,6 +823,10 @@ async def send_message(
     system_text = await _build_system_prompt(session, dataset=dataset, source=source)
     working_messages = await _build_history_messages(session, conversation_id, system_text)
 
+    # Real user messages (as opposed to the kickoff trigger) imply
+    # action — the agent must call a tool first, not narrate. The
+    # forced tool_choice="any" on iteration 0 breaks the "I'll just
+    # describe what I'll do" pattern Claude tends to fall into.
     assistants = await _run_agent_loop(
         session,
         storage=storage,
@@ -816,6 +836,7 @@ async def send_message(
         credential=credential,
         api_key=api_key,
         working_messages=working_messages,
+        force_first_tool_call=True,
     )
 
     if convo.title is None:
