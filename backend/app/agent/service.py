@@ -491,11 +491,16 @@ async def create_conversation(
 
 
 # Providers with native tool-use wired in. The clients.py module owns
-# the per-vendor request shape — Anthropic uses ``tool_use`` content
-# blocks, OpenAI uses top-level ``tool_calls`` arrays. We share the
-# same internal :class:`ToolCall` shape so the agent loop doesn't
-# branch by provider.
-_TOOL_USE_PROVIDERS = {"anthropic", "openai"}
+# the per-vendor request shape:
+#   * Anthropic — ``tool_use`` / ``tool_result`` content blocks
+#   * OpenAI    — top-level ``tool_calls`` arrays + ``role="tool"``
+#   * Google    — ``functionCall`` / ``functionResponse`` parts
+#   * Ollama    — OpenAI-compatible (on recent versions + supported
+#                 models — old or non-tool-capable Ollama models just
+#                 ignore the tools list and the loop degrades to text)
+# All four normalize to the same internal :class:`ToolCall` shape so
+# the agent loop doesn't branch by provider.
+_TOOL_USE_PROVIDERS = {"anthropic", "openai", "google", "ollama"}
 
 # Cap on how many inspect-and-respond round-trips one turn can run.
 # A typical "clean this for ML training" pipeline runs ~6 tool calls

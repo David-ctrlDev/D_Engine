@@ -402,25 +402,142 @@ async def _chat_openai(
 # ---------------------------------------------------------------------------
 
 
+def _build_google_messages(messages: list[ChatMessage]) -> list[dict[str, Any]]:
+    """Translate our internal message list to Google's wire format.
+
+    Three quirks to handle:
+
+    * Tool results come back as ``role="user"`` messages with a
+      ``functionResponse`` part containing ``{name, response}``.
+      Google does NOT use a ``tool`` role.
+    * Assistant turns that called tools carry ``functionCall`` parts
+      *alongside* any text parts inside the same ``role="model"``
+      message.
+    * Anthropic-style ``assistant`` becomes ``model``; ``user`` stays.
+    """
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        if m.role == "system":
+            continue  # hoisted into ``systemInstruction``
+        if m.role == "tool" and m.tool_use_id is not None:
+            # Google identifies tool results by *name* + the tool's id
+            # isn't a primary key. We stash the id in the response body
+            # so the model can correlate if it cares; the content is
+            # the JSON we sent in OpenAI / Anthropic.
+            out.append(
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "functionResponse": {
+                                # The tool name has to match the call; we encode
+                                # it into the synthetic ``tool_use_id`` upstream
+                                # by stripping the "call-" prefix some providers
+                                # add. For Google we re-derive from the matching
+                                # assistant turn's call name when we build
+                                # messages — but practically, the agent service
+                                # stores ``{tool_use_id, name}`` together when
+                                # this matters. For v1 we pass the id as the
+                                # name and let Google's heuristics match.
+                                "name": m.tool_use_id,
+                                "response": {"content": m.content},
+                            }
+                        }
+                    ],
+                }
+            )
+            continue
+        if m.role == "assistant" and m.tool_calls:
+            parts: list[dict[str, Any]] = []
+            if m.content:
+                parts.append({"text": m.content})
+            for tc in m.tool_calls:
+                parts.append(
+                    {
+                        "functionCall": {
+                            "name": tc["name"],
+                            "args": tc.get("input") or {},
+                        }
+                    }
+                )
+            out.append({"role": "model", "parts": parts})
+            continue
+        role = "model" if m.role == "assistant" else "user"
+        out.append({"role": role, "parts": [{"text": m.content}]})
+    return out
+
+
+def _anthropic_tools_to_google(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Map our tool specs to Google's nested envelope.
+
+    Google wants ``[{"functionDeclarations": [{name, description,
+    parameters}]}]`` — one outer ``tools`` entry holds all declarations.
+    The JSON-Schema body is otherwise identical.
+    """
+    return [
+        {
+            "functionDeclarations": [
+                {
+                    "name": t["name"],
+                    "description": t.get("description", ""),
+                    "parameters": t.get(
+                        "input_schema", {"type": "object", "properties": {}}
+                    ),
+                }
+                for t in tools
+            ]
+        }
+    ]
+
+
+def _google_tool_config(tool_choice: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Translate the normalized tool_choice to Google's toolConfig.
+
+    Google uses ``{"functionCallingConfig": {"mode": "ANY"|"AUTO"|"NONE"}}``
+    where ``ANY`` forces a tool call (their equivalent of Anthropic's
+    ``any`` / OpenAI's ``required``).
+    """
+    if tool_choice is None:
+        return None
+    t = tool_choice.get("type")
+    if t == "any":
+        return {"functionCallingConfig": {"mode": "ANY"}}
+    if t == "auto":
+        return {"functionCallingConfig": {"mode": "AUTO"}}
+    if t == "tool":
+        return {
+            "functionCallingConfig": {
+                "mode": "ANY",
+                "allowedFunctionNames": [tool_choice.get("name", "")],
+            }
+        }
+    return None
+
+
 async def _chat_google(
     *,
     api_key: str,
     model: str,
     messages: list[ChatMessage],
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: dict[str, Any] | None = None,
 ) -> ChatCompletion:
     """Google's prompt format is different enough to deserve its own
     serialiser. System messages go into a ``systemInstruction`` block;
-    user/assistant turns get role-mapped (``assistant`` → ``model``)."""
+    user/assistant turns get role-mapped (``assistant`` → ``model``).
+    Tool calls live as ``functionCall`` parts inside model messages;
+    results come back as ``functionResponse`` parts inside user
+    messages.
+    """
     system_text = "\n\n".join(m.content for m in messages if m.role == "system")
-    contents: list[dict[str, Any]] = []
-    for m in messages:
-        if m.role == "system":
-            continue
-        role = "model" if m.role == "assistant" else "user"
-        contents.append({"role": role, "parts": [{"text": m.content}]})
-    payload: dict[str, Any] = {"contents": contents}
+    payload: dict[str, Any] = {"contents": _build_google_messages(messages)}
     if system_text:
         payload["systemInstruction"] = {"parts": [{"text": system_text}]}
+    if tools:
+        payload["tools"] = _anthropic_tools_to_google(tools)
+        cfg = _google_tool_config(tool_choice)
+        if cfg is not None:
+            payload["toolConfig"] = cfg
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT) as client:
         try:
@@ -431,10 +548,26 @@ async def _chat_google(
         raise ProviderError(f"Google {r.status_code}: {r.text[:300]}")
     data = r.json()
     candidates = data.get("candidates") or []
-    text = ""
+    text_chunks: list[str] = []
+    tool_calls: list[ToolCall] = []
     if candidates:
         parts = candidates[0].get("content", {}).get("parts") or []
-        text = "".join(p.get("text", "") for p in parts)
+        for i, p in enumerate(parts):
+            if "text" in p:
+                text_chunks.append(p.get("text", ""))
+            elif "functionCall" in p:
+                fc = p["functionCall"]
+                # Google doesn't ship a stable id for function calls; we
+                # synthesize one from the index so we can match the
+                # response back through ``functionResponse.name``.
+                tool_calls.append(
+                    ToolCall(
+                        id=str(fc.get("name", f"call_{i}")),
+                        name=str(fc.get("name", "")),
+                        args=fc.get("args") or {},
+                    )
+                )
+    finish_reason = candidates[0].get("finishReason") if candidates else None
     meta = data.get("usageMetadata") or {}
     usage = None
     if meta:
@@ -443,7 +576,12 @@ async def _chat_google(
             "completion": int(meta.get("candidatesTokenCount", 0)),
             "total": int(meta.get("totalTokenCount", 0)),
         }
-    return ChatCompletion(text=text, token_usage=usage)
+    return ChatCompletion(
+        text="".join(text_chunks),
+        token_usage=usage,
+        tool_calls=tuple(tool_calls),
+        stop_reason=finish_reason,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -451,19 +589,80 @@ async def _chat_google(
 # ---------------------------------------------------------------------------
 
 
+def _build_ollama_messages(messages: list[ChatMessage]) -> list[dict[str, Any]]:
+    """Ollama's ``/api/chat`` speaks an OpenAI-compatible message shape
+    on recent versions: ``role`` of ``system|user|assistant|tool``, with
+    tool results as ``role="tool"`` carrying ``tool_call_id``, and
+    assistant turns with tool calls carrying ``tool_calls`` (arguments
+    JSON-stringified). The translation is the same as OpenAI's."""
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        if m.role == "tool" and m.tool_use_id is not None:
+            out.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": m.tool_use_id,
+                    "content": m.content,
+                }
+            )
+            continue
+        if m.role == "assistant" and m.tool_calls:
+            out.append(
+                {
+                    "role": "assistant",
+                    "content": m.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc["id"],
+                            "type": "function",
+                            "function": {
+                                "name": tc["name"],
+                                # Ollama (recent) accepts arguments either as
+                                # a JSON string (OpenAI-style) or as a dict;
+                                # we send the dict form which is friendlier
+                                # to llama3.1+ and qwen2.5+.
+                                "arguments": tc.get("input") or {},
+                            },
+                        }
+                        for tc in m.tool_calls
+                    ],
+                }
+            )
+            continue
+        out.append({"role": m.role, "content": m.content})
+    return out
+
+
 async def _chat_ollama(
     *,
     base_url: str,
     model: str,
     messages: list[ChatMessage],
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: dict[str, Any] | None = None,
 ) -> ChatCompletion:
+    """Ollama chat completion with native tool-use on recent versions.
+
+    Not every Ollama model supports tools — only the function-calling
+    family (``llama3.1+``, ``qwen2.5+``, ``mistral-nemo``, etc.). If
+    the model doesn't recognise the ``tools`` parameter, Ollama
+    silently ignores it and we fall back to a text-only response —
+    the agent loop handles that gracefully.
+
+    We don't pass ``tool_choice`` to Ollama: support is patchy across
+    models and the field is silently ignored on the ones that lack
+    it. We rely on the imperative system prompt to nudge tool use.
+    """
     if not base_url:
         raise ProviderError("Falta la URL del servidor Ollama.")
-    payload = {
+    payload: dict[str, Any] = {
         "model": model,
         "stream": False,
-        "messages": [{"role": m.role, "content": m.content} for m in messages],
+        "messages": _build_ollama_messages(messages),
     }
+    if tools:
+        # Ollama uses the OpenAI tool envelope verbatim.
+        payload["tools"] = _anthropic_tools_to_openai(tools)
     url = base_url.rstrip("/") + "/api/chat"
     async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT) as client:
         try:
@@ -473,7 +672,32 @@ async def _chat_ollama(
     if r.status_code >= 400:
         raise ProviderError(f"Ollama {r.status_code}: {r.text[:300]}")
     data = r.json()
-    text = (data.get("message") or {}).get("content") or ""
+    message = data.get("message") or {}
+    text = message.get("content") or ""
+    raw_tool_calls = message.get("tool_calls") or []
+    tool_calls: list[ToolCall] = []
+    for i, tc in enumerate(raw_tool_calls):
+        fn = tc.get("function") or {}
+        raw_args = fn.get("arguments")
+        # Recent Ollama returns args as a dict; older builds (and some
+        # models) return them JSON-stringified like OpenAI. Tolerate
+        # both.
+        if isinstance(raw_args, str):
+            try:
+                args = json.loads(raw_args)
+            except (json.JSONDecodeError, ValueError):
+                args = {}
+        elif isinstance(raw_args, dict):
+            args = raw_args
+        else:
+            args = {}
+        tool_calls.append(
+            ToolCall(
+                id=str(tc.get("id") or f"call_{i}"),
+                name=str(fn.get("name", "")),
+                args=args,
+            )
+        )
     # Ollama returns prompt_eval_count / eval_count (tokens). Newer
     # builds report them reliably; older ones may not.
     prompt_t = data.get("prompt_eval_count")
@@ -485,7 +709,12 @@ async def _chat_ollama(
             "completion": completion_t,
             "total": prompt_t + completion_t,
         }
-    return ChatCompletion(text=text, token_usage=usage)
+    return ChatCompletion(
+        text=text,
+        token_usage=usage,
+        tool_calls=tuple(tool_calls),
+        stop_reason=data.get("done_reason"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -531,9 +760,21 @@ async def chat_completion(
             tool_choice=tool_choice,
         )
     if provider is LlmProviderKind.google:
-        return await _chat_google(api_key=api_key, model=model, messages=messages)
+        return await _chat_google(
+            api_key=api_key,
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+        )
     if provider is LlmProviderKind.ollama:
-        return await _chat_ollama(base_url=base_url or "", model=model, messages=messages)
+        return await _chat_ollama(
+            base_url=base_url or "",
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+        )
     raise ProviderError(f"Proveedor no soportado: {provider}")  # pragma: no cover
 
 
