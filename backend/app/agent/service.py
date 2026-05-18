@@ -490,12 +490,12 @@ async def create_conversation(
 # ---------------------------------------------------------------------------
 
 
-# Anthropic is the only provider with native tool-use wired in for this
-# slice. The others can still chat — they just don't see the tools list
-# and so will never call ``inspect_column`` / ``propose_dedupe``. We hand
-# the user a graceful "ejecuta con Claude por ahora" message in the
-# proxy-action path when they're not on Anthropic.
-_TOOL_USE_PROVIDERS = {"anthropic"}
+# Providers with native tool-use wired in. The clients.py module owns
+# the per-vendor request shape — Anthropic uses ``tool_use`` content
+# blocks, OpenAI uses top-level ``tool_calls`` arrays. We share the
+# same internal :class:`ToolCall` shape so the agent loop doesn't
+# branch by provider.
+_TOOL_USE_PROVIDERS = {"anthropic", "openai"}
 
 # Cap on how many inspect-and-respond round-trips one turn can run.
 # A typical "clean this for ML training" pipeline runs ~6 tool calls

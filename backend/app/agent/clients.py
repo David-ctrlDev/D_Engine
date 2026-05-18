@@ -25,6 +25,7 @@ What this module is responsible for
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -233,16 +234,118 @@ async def _chat_anthropic(
 # ---------------------------------------------------------------------------
 
 
+def _build_openai_messages(messages: list[ChatMessage]) -> list[dict[str, Any]]:
+    """Translate our internal message list to OpenAI's wire format.
+
+    OpenAI differs from Anthropic in three places:
+
+    * Tool results go as a dedicated ``role="tool"`` message with
+      ``tool_call_id`` at the top level (not nested in content blocks).
+    * Assistant turns with tool calls carry a top-level ``tool_calls``
+      array; arguments are JSON-encoded strings, not parsed dicts.
+    * System messages stay inline as a ``role="system"`` message —
+      they're not hoisted to a separate field like Anthropic.
+    """
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        if m.role == "tool" and m.tool_use_id is not None:
+            out.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": m.tool_use_id,
+                    "content": m.content,
+                }
+            )
+            continue
+        if m.role == "assistant" and m.tool_calls:
+            out.append(
+                {
+                    "role": "assistant",
+                    "content": m.content or None,
+                    "tool_calls": [
+                        {
+                            "id": tc["id"],
+                            "type": "function",
+                            "function": {
+                                "name": tc["name"],
+                                # OpenAI insists on a JSON-string here; the
+                                # SDKs do the same conversion behind the scenes.
+                                "arguments": json.dumps(tc.get("input") or {}),
+                            },
+                        }
+                        for tc in m.tool_calls
+                    ],
+                }
+            )
+            continue
+        out.append({"role": m.role, "content": m.content})
+    return out
+
+
+def _anthropic_tools_to_openai(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Map our internal (Anthropic-shaped) tool specs to OpenAI's
+    ``{type: 'function', function: {name, description, parameters}}``
+    envelope. The JSON-Schema body inside is identical."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "parameters": t.get("input_schema", {"type": "object", "properties": {}}),
+            },
+        }
+        for t in tools
+    ]
+
+
+def _openai_tool_choice(tool_choice: dict[str, Any] | None) -> str | dict[str, Any] | None:
+    """Translate the normalized tool_choice payload to OpenAI's shape.
+
+    Anthropic's ``{"type": "any"}`` → OpenAI's ``"required"`` (a bare
+    string, not a dict — that's their API). ``{"type": "auto"}`` →
+    ``"auto"``. ``{"type": "tool", "name": X}`` → the dict variant.
+    """
+    if tool_choice is None:
+        return None
+    t = tool_choice.get("type")
+    if t == "any":
+        return "required"
+    if t == "auto":
+        return "auto"
+    if t == "tool":
+        return {
+            "type": "function",
+            "function": {"name": tool_choice.get("name", "")},
+        }
+    return None
+
+
 async def _chat_openai(
     *,
     api_key: str,
     model: str,
     messages: list[ChatMessage],
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: dict[str, Any] | None = None,
 ) -> ChatCompletion:
-    payload = {
+    """OpenAI chat completion with native tool-use.
+
+    Mirrors the Anthropic path: when ``tools`` is provided the model
+    may emit ``tool_calls`` in its message; we parse them back as
+    :class:`ToolCall` instances. OpenAI's ``arguments`` field is a
+    JSON-encoded string — we ``json.loads`` it so the agent service
+    sees a dict, identical to the Anthropic path.
+    """
+    payload: dict[str, Any] = {
         "model": model,
-        "messages": [{"role": m.role, "content": m.content} for m in messages],
+        "messages": _build_openai_messages(messages),
     }
+    if tools:
+        payload["tools"] = _anthropic_tools_to_openai(tools)
+        oc = _openai_tool_choice(tool_choice)
+        if oc is not None:
+            payload["tool_choice"] = oc
     async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT) as client:
         try:
             r = await client.post(
@@ -259,7 +362,26 @@ async def _chat_openai(
         raise ProviderError(f"OpenAI {r.status_code}: {r.text[:300]}")
     data = r.json()
     choices = data.get("choices") or []
-    text = (choices[0].get("message", {}).get("content") or "") if choices else ""
+    message = choices[0].get("message", {}) if choices else {}
+    text = message.get("content") or ""
+    raw_tool_calls = message.get("tool_calls") or []
+    tool_calls: list[ToolCall] = []
+    for tc in raw_tool_calls:
+        if tc.get("type") != "function":
+            continue
+        fn = tc.get("function") or {}
+        # ``arguments`` is a JSON-encoded string on OpenAI. We parse it
+        # so the agent service sees the same dict shape that Anthropic
+        # delivers natively.
+        raw_args = fn.get("arguments") or "{}"
+        try:
+            args = json.loads(raw_args)
+        except (json.JSONDecodeError, ValueError):
+            args = {}
+        tool_calls.append(
+            ToolCall(id=str(tc.get("id", "")), name=str(fn.get("name", "")), args=args)
+        )
+    finish_reason = choices[0].get("finish_reason") if choices else None
     usage = data.get("usage") or {}
     return ChatCompletion(
         text=text,
@@ -270,6 +392,8 @@ async def _chat_openai(
         }
         if usage
         else None,
+        tool_calls=tuple(tool_calls),
+        stop_reason=finish_reason,
     )
 
 
@@ -399,7 +523,13 @@ async def chat_completion(
             tool_choice=tool_choice,
         )
     if provider is LlmProviderKind.openai:
-        return await _chat_openai(api_key=api_key, model=model, messages=messages)
+        return await _chat_openai(
+            api_key=api_key,
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+        )
     if provider is LlmProviderKind.google:
         return await _chat_google(api_key=api_key, model=model, messages=messages)
     if provider is LlmProviderKind.ollama:
