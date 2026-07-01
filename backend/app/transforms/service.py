@@ -21,6 +21,7 @@ read back ids; the **caller** commits. Same convention as
 
 from __future__ import annotations
 
+import io
 import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -225,6 +226,55 @@ async def run_operation(
 
 
 # ---------------------------------------------------------------------------
+# Export — serialise the current snapshot for download
+# ---------------------------------------------------------------------------
+
+
+# format -> (media_type, file extension). CSV and Parquet come free with
+# polars; XLSX needs the ``xlsxwriter`` engine (a declared dependency).
+_EXPORT_FORMATS: dict[str, tuple[str, str]] = {
+    "csv": ("text/csv", "csv"),
+    "parquet": ("application/octet-stream", "parquet"),
+    "xlsx": (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "xlsx",
+    ),
+}
+
+
+def export_working_copy(
+    storage: LocalFileStorage,
+    *,
+    working_copy: DatasetWorkingCopy,
+    fmt: str,
+) -> tuple[bytes, str, str]:
+    """Serialise the current snapshot to ``fmt`` for download.
+
+    Returns ``(payload_bytes, media_type, extension)``. This reads the
+    *current* snapshot the working copy points at — i.e. the state after
+    every applied (non-undone) operation — so the user downloads exactly
+    what they see in the "Datos limpios" panel. Raises
+    :class:`WorkingCopyError` for an unknown format.
+    """
+    meta = _EXPORT_FORMATS.get(fmt)
+    if meta is None:
+        supported = ", ".join(sorted(_EXPORT_FORMATS))
+        raise WorkingCopyError(
+            f"Formato de exportación no soportado: {fmt!r}. Usa uno de: {supported}."
+        )
+    media_type, ext = meta
+    frame = _read_snapshot(storage, working_copy.snapshot_path)
+    buf = io.BytesIO()
+    if fmt == "csv":
+        frame.write_csv(buf)
+    elif fmt == "parquet":
+        frame.write_parquet(buf)
+    else:  # xlsx
+        frame.write_excel(buf)
+    return buf.getvalue(), media_type, ext
+
+
+# ---------------------------------------------------------------------------
 # Undo / reset
 # ---------------------------------------------------------------------------
 
@@ -333,6 +383,7 @@ async def reset_working_copy(
 
 __all__ = [
     "WorkingCopyError",
+    "export_working_copy",
     "get_or_create_working_copy",
     "reset_working_copy",
     "run_operation",

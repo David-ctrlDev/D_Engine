@@ -29,14 +29,16 @@ from typing import Any
 from uuid import UUID
 
 import polars as pl
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import desc, select
 
 from app.auth.dependencies import AuthSessionDep, CurrentUserDep
 from app.data.deps import StorageDep
+from app.data.models import Dataset
 from app.transforms import service as transforms_service
 from app.transforms.models import DatasetOperation, DatasetWorkingCopy
+from app.utils.slug import slugify
 
 router = APIRouter(prefix="/api/v1/datasets", tags=["working-copy"])
 
@@ -140,9 +142,7 @@ async def get_working_copy(
     return WorkingCopySummary.model_validate(wc)
 
 
-@router.get(
-    "/{dataset_id}/working-copy/sample", response_model=WorkingCopySampleResponse
-)
+@router.get("/{dataset_id}/working-copy/sample", response_model=WorkingCopySampleResponse)
 async def get_working_copy_sample(
     dataset_id: str,
     session: AuthSessionDep,
@@ -206,6 +206,45 @@ async def list_working_copy_operations(
 
 
 # ---------------------------------------------------------------------------
+# Export — download the cleaned data
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{dataset_id}/working-copy/export")
+async def export_working_copy(
+    dataset_id: str,
+    session: AuthSessionDep,
+    user: CurrentUserDep,
+    storage: StorageDep,
+    format: str = Query("csv", description="csv | parquet | xlsx"),
+) -> Response:
+    """Download the current cleaned snapshot as a file.
+
+    Serialises the working copy's *current* state (after every applied,
+    non-undone operation) to the requested format and streams it back
+    with a ``Content-Disposition: attachment`` so the browser saves it.
+    The filename is derived from the dataset name for a friendly download.
+    """
+    did = _parse_uuid_or_404(dataset_id, "Dataset")
+    wc = await _find_working_copy_for_user(session, did, user.id)
+    try:
+        payload, media_type, ext = transforms_service.export_working_copy(
+            storage, working_copy=wc, fmt=format
+        )
+    except transforms_service.WorkingCopyError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+
+    dataset = (await session.execute(select(Dataset).where(Dataset.id == did))).scalar_one_or_none()
+    base = (slugify(dataset.name) if dataset and dataset.name else "") or "dataset"
+    filename = f"{base}-limpio.{ext}"
+    return Response(
+        content=payload,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Undo / reset
 # ---------------------------------------------------------------------------
 
@@ -247,9 +286,7 @@ async def undo_working_copy_operation(
             operation_id=oid,
         )
     except transforms_service.WorkingCopyError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
-        ) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     await session.commit()
     return UndoResponse(
         working_copy=WorkingCopySummary.model_validate(updated),
